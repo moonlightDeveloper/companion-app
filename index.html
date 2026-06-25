@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Companion — understand what's actually happening</title>
+<style>
+  :root{
+    --bg:#fbf1f0; --paper:#fffafa; --ink:#2a1416; --muted:#8a6a6c; --line:#f1d3d2;
+    --accent:#c0392f; --accent-dk:#8f2620; --accent2:#9a5a52; --soft:#fdeceb; --soft2:#fff4f3;
+    --green:#5e7e68; --amber:#b8842d; --warn:#c0392f; --white:#fff;
+    --shadow:0 24px 55px rgba(90,20,24,.15);
+  }
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.reveal{opacity:1!important;transform:none!important}}
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;color:var(--ink);background:var(--bg);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;line-height:1.5}
+  a{color:inherit;text-decoration:none}
+  img{display:block;max-width:100%}
+  .inner{max-width:1120px;margin:auto}
+  .btn{display:inline-flex;align-items:center;gap:8px;border:0;border-radius:16px;font-weight:800;font-size:15px;cursor:pointer;padding:15px 22px;transition:transform .15s ease}
+  .btn:hover{transform:translateY(-1px)}
+  .btn-primary{background:var(--ink);color:#fff;box-shadow:0 12px 25px rgba(47,37,33,.18)}
+  .btn-accent{background:var(--accent);color:#fff;box-shadow:0 12px 25px rgba(192,57,47,.28)}
+  .btn-ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}
+
+  .nav{position:sticky;top:0;z-index:50;background:rgba(255,250,247,.86);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+  .nav-in{max-width:1120px;margin:auto;display:flex;align-items:center;justify-content:space-between;padding:13px 22px}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:850;letter-spacing:-.02em}
+  .logo-mark{width:32px;height:32px;border-radius:9px;background:var(--soft2);border:1px solid var(--line);display:grid;place-items:center;color:var(--accent)}
+  .nav-note{font-size:13px;color:var(--muted)}
+  .nav-right{display:flex;align-items:center;gap:16px}
+  @media(max-width:780px){.nav-note{display:none}}
+
+  .hero{padding:60px 22px 18px}
+  .hero-in{max-width:1120px;margin:auto;display:grid;grid-template-columns:1.05fr .95fr;gap:46px;align-items:center}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;background:var(--soft2);border:1px solid var(--line);color:var(--accent2);border-radius:999px;padding:8px 13px;font-size:12.5px;font-weight:800}
+  .tw{min-height:26px;margin:18px 0 4px;font-size:18px;font-weight:800;color:var(--accent);letter-spacing:-.01em}
+  .tw .cur{display:inline-block;width:2px;height:1em;background:var(--accent);margin-left:2px;vertical-align:-2px;animation:blink 1s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+  h1{font-size:50px;line-height:1.04;letter-spacing:-.045em;margin:6px 0 14px;font-weight:850}
+  h1 em{display:block;font-style:normal;color:var(--accent-dk);font-size:.62em;margin-top:12px;font-weight:800}
+  .lead{font-size:16.5px;color:var(--muted);line-height:1.6;margin:0 0 24px;max-width:32em}
+  .lead b{color:var(--ink);font-weight:750}
+  .hero-actions{display:flex;gap:12px;flex-wrap:wrap}
+  .trust{display:flex;gap:18px;flex-wrap:wrap;margin-top:22px;font-size:13px;color:var(--muted);font-weight:600}
+  .trust span{display:inline-flex;align-items:center;gap:6px}.trust b{color:var(--green)}
+
+  .hero-card{position:relative;background:var(--paper);border:1px solid var(--line);border-radius:26px;box-shadow:var(--shadow);overflow:hidden}
+  .hero-photo{width:100%;height:230px;object-fit:cover;background:var(--soft)}
+  .mock{padding:16px 17px}
+  .mock .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--accent2);font-weight:850;margin-bottom:12px}
+  .barrow{margin-bottom:13px}
+  .barhead{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:6px}
+  .barhead b{font-weight:800}.barhead span{color:var(--muted)}
+  .track{height:8px;background:#f3dede;border-radius:999px;overflow:hidden}
+  .fill{height:100%;width:0;border-radius:999px;transition:width 1.1s cubic-bezier(.22,1,.36,1)}
+  .barcap{margin:6px 0 0;font-size:11.5px;color:var(--muted);line-height:1.4}
+
+  .strip{background:var(--ink);color:#fff}
+  .strip-in{max-width:1120px;margin:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:rgba(255,255,255,.08)}
+  .strip-item{padding:22px;background:var(--ink)}
+  .strip-item b{display:block;font-size:14px}.strip-item span{font-size:13px;color:rgba(255,255,255,.66)}
+
+  .recog{padding:64px 22px;text-align:center;background:var(--soft2);border-bottom:1px solid var(--line)}
+  .recog-line{font-size:27px;line-height:1.32;letter-spacing:-.02em;font-weight:850;max-width:19em;margin:0 auto;color:var(--ink)}
+  .recog-line b{color:var(--accent-dk)}
+  .recog-sub{font-size:16px;color:var(--muted);max-width:34em;margin:16px auto 0;line-height:1.6}
+
+  .sec{padding:80px 22px}.sec.alt{background:var(--paper);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .sec-label{font-size:12px;text-transform:uppercase;letter-spacing:.11em;color:var(--accent2);font-weight:900;margin-bottom:10px}
+  .sec-title{font-size:34px;line-height:1.1;letter-spacing:-.03em;margin:0;font-weight:850;max-width:20em}
+  .sec-sub{font-size:16px;line-height:1.65;color:var(--muted);max-width:42em;margin:14px 0 0}
+
+  .cost-head h2{font-size:30px;letter-spacing:-.03em;margin:0;max-width:18em}
+  .cost-head p{color:var(--muted);margin:12px 0 0;font-size:16px}
+  .cost-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:34px}
+  .cost-item{background:#fff;border:1px solid var(--line);border-radius:20px;padding:22px}
+  .cost-ic{font-size:22px}.cost-item h3{margin:12px 0 7px;font-size:16px}.cost-item p{margin:0;color:var(--muted);font-size:13.5px;line-height:1.55}
+
+  .grid2{display:grid;grid-template-columns:1.1fr .9fr;gap:38px;align-items:center;margin-top:34px}
+  .pain{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
+  .pain:last-child{border-bottom:0}
+  .pain-ic{width:38px;height:38px;border-radius:12px;background:var(--soft2);border:1px solid var(--line);display:grid;place-items:center;flex-shrink:0}
+  .pain h3{margin:0 0 5px;font-size:15.5px}.pain p{margin:0;color:var(--muted);font-size:13.5px;line-height:1.55}
+  .imgbox{border-radius:22px;overflow:hidden;border:1px solid var(--line);background:var(--soft)}
+  .imgbox img{width:100%;height:380px;object-fit:cover}
+
+  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:34px}
+  .step{background:#fff;border:1px solid var(--line);border-radius:20px;padding:20px}
+  .step-n{width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:900;margin-bottom:14px}
+  .step h3{margin:0 0 7px;font-size:15.5px}.step p{margin:0;color:var(--muted);font-size:13px;line-height:1.55}
+
+  .read-card{max-width:520px;background:var(--paper);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow);overflow:hidden;margin-top:30px}
+  .read-top{padding:15px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:11px}
+  .read-av{width:34px;height:34px;border-radius:50%;background:var(--soft);display:grid;place-items:center;font-weight:800;color:var(--accent2);font-size:14px}
+  .read-top .t{font-weight:800;font-size:14px}.read-top .s{font-size:11.5px;color:var(--muted)}
+  .read-body{padding:18px}
+  .leaves{margin-top:8px;background:#f4f9f5;border:1px solid #cfe0d2;border-radius:14px;padding:13px}
+  .leaves .k{font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--green);font-weight:850}
+  .leaves p{margin:5px 0 0;font-size:12.5px;color:var(--ink);line-height:1.45}
+
+  .moat{margin-top:48px;text-align:center}
+  .moat .ml{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--accent2);font-weight:900}
+  .moat h3{font-size:24px;letter-spacing:-.02em;margin:10px auto 8px;max-width:22em}
+  .moat p{color:var(--muted);max-width:40em;margin:0 auto;font-size:14.5px;line-height:1.6}
+  .weeks{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:10px;align-items:stretch;margin:30px auto 0;max-width:820px}
+  .wk{background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px;text-align:left}
+  .wk.now{border-color:var(--amber);box-shadow:0 8px 26px rgba(184,132,45,.13)}
+  .wk .when{font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:8px}
+  .wk .verdict{font-size:14px;font-weight:800;margin-bottom:8px}
+  .wk .pt{font-size:12px;color:var(--muted);display:flex;gap:7px;margin-top:4px;line-height:1.4}
+  .wk .pt::before{content:"\2022";color:var(--accent)}
+  .wk.good .pt::before{color:var(--green)}
+  .arr{display:grid;place-items:center;color:var(--accent);font-weight:900;font-size:18px}
+  @media(max-width:780px){.weeks{grid-template-columns:1fr}.arr{display:none}}
+
+  .delta{margin-top:34px;max-width:760px}
+  .delta-card{background:#fff;border:1px solid var(--line);border-radius:22px;padding:24px;position:relative;overflow:hidden;box-shadow:0 8px 26px rgba(64,40,34,.07)}
+  .delta-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--amber)}
+  .delta-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:16px}
+  .delta-eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--accent2);font-weight:900;margin-bottom:6px}
+  .delta-head h4{margin:0;font-size:18px}
+  .delta-pill{background:var(--soft2);border:1px solid var(--line);border-radius:14px;padding:8px 13px;font-size:12.5px;font-weight:800;color:var(--accent2);white-space:nowrap}
+  .delta-row{display:flex;gap:11px;padding:11px 0;border-top:1px solid var(--line)}
+  .delta-mark{font-weight:900;color:var(--amber)}
+  .delta-row.good .delta-mark{color:var(--green)}
+  .delta-row p{margin:0;font-size:13.5px;font-weight:700}
+  .delta-row span{display:block;font-weight:400;color:var(--muted);font-size:12.5px;margin-top:2px}
+  .delta-foot{margin:16px 0 0;font-size:13px;color:var(--muted);line-height:1.6}
+
+  .trust-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:32px}
+  .tcard{background:#fff;border:1px solid var(--line);border-radius:18px;padding:20px}
+  .tcard h3{margin:0 0 8px;font-size:15px}.tcard p{margin:0;color:var(--muted);font-size:13.5px;line-height:1.55}
+
+  .count{display:flex;align-items:baseline;gap:10px;margin-top:24px}
+  .count .num{font-size:40px;font-weight:900;color:var(--accent);letter-spacing:-.03em}
+  .count span{font-size:15px;color:var(--muted)}
+  .tgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:24px}
+  .tq{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:20px}
+  .tq .stars{color:var(--amber);letter-spacing:2px;font-size:13px;margin-bottom:10px}
+  .tq p{margin:0 0 12px;font-size:13.5px;line-height:1.55}.tq .who{font-size:12.5px;color:var(--muted);font-weight:700}
+  .note{margin-top:18px;font-size:12px;color:var(--muted);background:var(--soft2);border:1px dashed #d8c2ba;border-radius:12px;padding:11px 13px;display:inline-block}
+
+  .pgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:30px}
+  .pcard{background:#fff;border:1px solid var(--line);border-radius:18px;overflow:hidden}
+  .pcard img{width:100%;height:150px;object-fit:cover;background:var(--soft)}
+  .pcap{padding:15px}.pcap .tag{font-size:10.5px;font-weight:850;text-transform:uppercase;letter-spacing:.06em;color:var(--accent2);background:var(--soft2);border:1px solid var(--line);border-radius:999px;padding:4px 9px;display:inline-block;margin-bottom:9px}
+  .pcap h3{margin:0 0 6px;font-size:15px}.pcap p{margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}
+
+  .feat{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:30px}
+  .frow{display:flex;gap:14px;background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px}
+  .frow .ic{font-size:20px}.frow h3{margin:0 0 6px;font-size:15.5px}.frow p{margin:0;color:var(--muted);font-size:13px;line-height:1.5}
+
+  .stories-frame{margin-top:28px;border:1px solid var(--line);border-radius:22px;overflow:hidden;background:var(--paper)}
+  .stories-bar{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);font-size:12.5px;font-weight:800;color:var(--accent2)}
+  .stories-bar .r{color:var(--muted);font-weight:600}
+  .stories-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;padding:18px}
+  .story{border:1px solid var(--line);border-radius:16px;padding:16px}
+  .story-top{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .story-av{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;font-size:14px}
+  .story-name{font-weight:800;font-size:14px}.story-meta{font-size:11px;color:var(--muted)}
+  .story-verdict{font-size:12.5px;color:var(--ink);font-weight:700}
+  .story-move{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.4}
+  @media(max-width:780px){.stories-grid{grid-template-columns:1fr}}
+
+  .plans{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:34px;max-width:780px}
+  .plan{background:#fff;border:1px solid var(--line);border-radius:22px;padding:26px;position:relative}
+  .plan.feat2{border:2px solid var(--accent)}
+  .badge{position:absolute;top:-12px;left:26px;background:var(--accent);color:#fff;font-size:11px;font-weight:850;border-radius:999px;padding:5px 12px}
+  .plan h3{margin:0;font-size:16px;font-weight:850}
+  .price{display:flex;align-items:baseline;gap:7px;margin:12px 0 2px}.price b{font-size:36px;letter-spacing:-.03em}.price span{font-size:13px;color:var(--muted)}
+  .per{font-size:12.5px;color:var(--muted)}
+  .plan ul{list-style:none;padding:0;margin:18px 0 0;display:grid;gap:9px}
+  .plan li{font-size:13.5px;display:flex;gap:9px;line-height:1.45}.plan li i{color:var(--green);font-style:normal;font-weight:900}
+  .plan .btn{margin-top:20px;width:100%;justify-content:center}
+  .plan-note{font-size:12.5px;color:var(--muted);margin-top:14px;line-height:1.5}
+  .pay-honest{margin-top:20px;font-size:12.5px;color:var(--muted);max-width:50em;line-height:1.55}
+
+  .faq{margin-top:30px;max-width:780px}
+  details{background:#fff;border:1px solid var(--line);border-radius:16px;padding:4px 18px;margin-bottom:10px}
+  summary{cursor:pointer;font-weight:800;font-size:15px;padding:14px 0;list-style:none;display:flex;justify-content:space-between;align-items:center}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"+";color:var(--accent);font-size:20px;font-weight:700}
+  details[open] summary::after{content:"\2013"}
+  details p{margin:0 0 16px;color:var(--muted);font-size:14px;line-height:1.65}
+
+  .final{padding:78px 22px;text-align:center}
+  .final h2{font-size:38px;letter-spacing:-.035em;margin:0 auto;max-width:13em;font-weight:850}
+  .final h2 em{display:block;font-style:normal;color:var(--accent-dk);font-size:.7em;margin-top:8px}
+  .final p{color:var(--muted);max-width:32em;margin:16px auto 26px;font-size:16px}
+  .disclaimer{margin:26px auto 0;max-width:600px;font-size:12px;color:var(--muted);line-height:1.6}
+
+  footer{border-top:1px solid var(--line);padding:28px 22px;font-size:13px;color:var(--muted)}
+  .foot-in{max-width:1120px;margin:auto;display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;align-items:center}
+
+  .reveal{opacity:0;transform:translateY(16px);transition:opacity .6s ease,transform .6s ease}
+  .reveal.in{opacity:1;transform:none}
+
+  @media(max-width:880px){
+    .hero-in,.grid2{grid-template-columns:1fr;gap:30px}
+    h1{font-size:38px}.final h2{font-size:30px}
+    .strip-in,.cost-grid,.steps,.trust-grid,.tgrid,.pgrid,.feat,.plans,.stories-grid{grid-template-columns:1fr}
+    .sec{padding:54px 22px}
+  }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <div class="nav-in">
+    <div class="logo"><div class="logo-mark">&#9788;</div> Companion</div>
+    <div class="nav-right">
+      <div class="nav-note">A second opinion on every confusing conversation</div>
+      <a class="btn btn-accent" style="padding:11px 18px;font-size:14px" href="app.html">Start free</a>
+    </div>
+  </div>
+</div>
+
+<header class="hero">
+  <div class="hero-in">
+    <div>
+      <span class="eyebrow">&#9788; Green flag or red flag? Read it clearly.</span>
+      <p class="tw"><span id="typed"></span><span class="cur"></span></p>
+      <h1>Red flag &mdash; or are you overthinking it?<em>Stop spiraling. Read what they actually did.</em></h1>
+      <p class="lead">Paste the part that's been living in your head. I'll show you what their <b>behavior</b> is really saying &mdash; green flags and red &mdash; and what to do next. No drama, no made-up score. <b>One question at a time.</b></p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="app.html">Understand what's happening &#8594;</a>
+        <a class="btn btn-ghost" href="#sample">See a sample read</a>
+      </div>
+      <div class="trust">
+        <span><b>&#10003;</b> First read free</span>
+        <span><b>&#10003;</b> Nickname only</span>
+        <span><b>&#10003;</b> No account to start</span>
+      </div>
+    </div>
+    <div class="hero-card reveal">
+      <video class="hero-photo" src="hero_clip.mp4" autoplay muted loop playsinline aria-label="Looking at a dating profile on a phone"></video>
+      <div class="mock">
+        <div class="lbl">&#9788; Your read &middot; behavior, not feelings</div>
+        <div class="barrow"><div class="barhead"><b>Effort balance</b><span>leaning your way</span></div><div class="track"><div class="fill" data-pct="72" style="background:var(--amber)"></div></div><p class="barcap">You open most threads and suggest most plans.</p></div>
+        <div class="barrow"><div class="barhead"><b>Plan clarity</b><span>stays vague</span></div><div class="track"><div class="fill" data-pct="28" style="background:var(--warn)"></div></div><p class="barcap">&ldquo;Maybe Friday,&rdquo; &ldquo;I&rsquo;ll let you know&rdquo; &mdash; nothing lands.</p></div>
+        <div class="barrow" style="margin-bottom:0"><div class="barhead"><b>Reply consistency</b><span>steady</span></div><div class="track"><div class="fill" data-pct="80" style="background:var(--green)"></div></div><p class="barcap">They do reply, warmly, within a day.</p></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="strip">
+  <div class="strip-in">
+    <div class="strip-item"><b>Behavior read</b><span>What they did, not a guess at how they feel</span></div>
+    <div class="strip-item"><b>The timeline</b><span>Watch how the situation actually moves</span></div>
+    <div class="strip-item"><b>What to say</b><span>One calm, clear thing to send next</span></div>
+  </div>
+</div>
+
+<section class="recog">
+  <div class="inner">
+    <p class="recog-line reveal">The exhausting part was never them. It's the <b>not-knowing</b> &mdash; the rereading, the half-typed replies, the asking everyone but yourself.</p>
+    <p class="recog-sub reveal">That's the part this ends. Not with a verdict on them &mdash; with one calm read of what's actually happening, so you can stop refreshing and get your head back.</p>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="inner">
+    <div class="cost-head reveal">
+      <h2>Every week you stay confused costs you something real.</h2>
+      <p>Clarity isn't a luxury. It's time, energy, and emotional investment you don't get back.</p>
+    </div>
+    <div class="cost-grid">
+      <div class="cost-item reveal"><div class="cost-ic">&#9203;</div><h3>Weeks reading into silences</h3><p>Hours a week spent overanalyzing a situationship that ends the same way anyway.</p></div>
+      <div class="cost-item reveal"><div class="cost-ic">&#128150;</div><h3>Energy spent on the wrong person</h3><p>Every month on someone inconsistent is a month not spent on someone who actually shows up.</p></div>
+      <div class="cost-item reveal"><div class="cost-ic">&#129504;</div><h3>Decisions on gut feeling alone</h3><p>Your gut is right more often than you think. Sometimes you just need one calm outside read to confirm it.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec alt">
+  <div class="inner">
+    <div class="sec-label reveal">The problem</div>
+    <h2 class="sec-title reveal">The hardest part isn't the message. It's the doubt after it.</h2>
+    <p class="sec-sub reveal">When you're emotionally involved, mixed signals feel impossible to read clearly. Companion turns the conversation into a calm, structured read &mdash; so you see the pattern instead of spiraling.</p>
+    <div class="grid2">
+      <div>
+        <div class="pain reveal"><div class="pain-ic">&#127917;</div><div><h3>They say one thing, do another</h3><p>&ldquo;I really like you,&rdquo; then days of silence. The gap between words and behavior is where the truth lives.</p></div></div>
+        <div class="pain reveal"><div class="pain-ic">&#9203;</div><div><h3>They reply, but never commit</h3><p>Attention, but no clear plan and no follow-through. Warm enough to keep you hoping, vague enough to stay unaccountable.</p></div></div>
+        <div class="pain reveal"><div class="pain-ic">&#127754;</div><div><h3>Intense, then suddenly distant</h3><p>The hot-then-cold swing is much easier to see from the outside than from inside it.</p></div></div>
+        <div class="pain reveal"><div class="pain-ic">&#129489;</div><div><h3>You keep asking friends</h3><p>Ten opinions, none based on the actual messages. One calm read of the behavior beats the group chat.</p></div></div>
+      </div>
+      <div class="imgbox reveal"><img src="https://res.cloudinary.com/duhk0jkin/image/upload/f_auto,q_auto/photo-session-1_1_gx1eys" alt="Person looking at their phone" onerror="this.parentElement.style.minHeight='380px'"/></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="inner">
+    <div class="sec-label reveal">How it works</div>
+    <h2 class="sec-title reveal">From a confusing chat to a clear read &mdash; like talking, not filling a form.</h2>
+    <div class="steps">
+      <div class="step reveal"><div class="step-n">1</div><h3>Tell me what's happening</h3><p>A few taps: how it started, what's making you unsure, how you feel. One question at a time.</p></div>
+      <div class="step reveal"><div class="step-n">2</div><h3>Paste the part that matters</h3><p>Just the lines that count. A nickname stands in &mdash; their real name never leaves your head.</p></div>
+      <div class="step reveal"><div class="step-n">3</div><h3>Get the behavior read</h3><p>What they actually did, what to watch, and one clear thing to say next &mdash; quoted from the conversation.</p></div>
+      <div class="step reveal"><div class="step-n">4</div><h3>Decide calmly</h3><p>Continue, ask directly, set a boundary, or step back &mdash; with more clarity and less second-guessing.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec alt" id="sample">
+  <div class="inner">
+    <div class="sec-label reveal">A sample read</div>
+    <h2 class="sec-title reveal">Not just &ldquo;they're into you&rdquo; or &ldquo;run.&rdquo; It shows you why.</h2>
+    <p class="sec-sub reveal">A good read never hands you a vague verdict or a made-up percentage. It names the pattern, points to the behavior, and tells you what to do. The whole first read is free.</p>
+
+    <div class="read-card reveal">
+      <div class="read-top"><div class="read-av">C</div><div><div class="t">Coffee guy &mdash; your first read</div><div class="s">based only on what you shared</div></div></div>
+      <div class="read-body" id="sampleBody">
+        <div class="barrow"><div class="barhead"><b>Effort balance</b><span>leaning your way</span></div><div class="track"><div class="fill" data-pct="72" style="background:var(--amber)"></div></div><p class="barcap">You open most threads and suggest most of the plans.</p></div>
+        <div class="barrow"><div class="barhead"><b>Plan clarity</b><span>stays vague</span></div><div class="track"><div class="fill" data-pct="28" style="background:var(--warn)"></div></div><p class="barcap">No concrete time has ever actually landed.</p></div>
+        <div class="barrow" style="margin-bottom:0"><div class="barhead"><b>Reply consistency</b><span>steady</span></div><div class="track"><div class="fill" data-pct="80" style="background:var(--green)"></div></div><p class="barcap">Warm replies, usually within a day.</p></div>
+        <div class="leaves"><div class="k">What I'd watch &middot; where this leaves you</div><p>Their move, not your chase. One clear, low-pressure invite tells you almost everything &mdash; then let their answer decide it. Nothing here says panic; you can put the phone down.</p></div>
+      </div>
+    </div>
+
+    <div class="moat reveal">
+      <div class="ml">The part nobody else has</div>
+      <h3>One read is a snapshot. Watch how it actually moved across three weeks.</h3>
+      <p>You don't have to remember what last week looked like &mdash; the story does. The drift you'd normally miss becomes something you can see.</p>
+      <div class="weeks">
+        <div class="wk good reveal"><div class="when">Week 1</div><div class="verdict">Strong start</div><div class="pt">Warm, curious, replies fast</div><div class="pt">Asked about your week first</div></div>
+        <div class="arr">&#8594;</div>
+        <div class="wk reveal"><div class="when">Week 2</div><div class="verdict">Plans stay open</div><div class="pt">Friendly, but &ldquo;maybe&rdquo; never set</div><div class="pt">Slower to reply</div></div>
+        <div class="arr">&#8594;</div>
+        <div class="wk now reveal"><div class="when">Week 3 &middot; latest</div><div class="verdict">Warm, still no plan</div><div class="pt">Same warmth, third week running</div><div class="pt">You're carrying the planning</div></div>
+      </div>
+    </div>
+
+    <div class="delta reveal" style="margin:34px auto 0">
+      <div class="delta-card">
+        <div class="delta-head">
+          <div><div class="delta-eyebrow">The reason people come back</div><h4>What changed since your last update</h4></div>
+          <div class="delta-pill">warmth holding &middot; plans drifting</div>
+        </div>
+        <div class="delta-row"><span class="delta-mark">&#9679;</span><p>Another plan stayed vague<span>Second &ldquo;maybe next week&rdquo; in two weeks</span></p></div>
+        <div class="delta-row"><span class="delta-mark">&#9679;</span><p>Replies got a little slower<span>Same warmth, less urgency</span></p></div>
+        <div class="delta-row good"><span class="delta-mark">&#10003;</span><p>Still genuinely warm when you talk<span>One real positive &mdash; not everything drifted</span></p></div>
+        <p class="delta-foot">Every new update is compared to the last, so a slow drift becomes a pattern you can actually point to &mdash; instead of a feeling you keep second-guessing.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="inner">
+    <div class="sec-label reveal">Private by design</div>
+    <h2 class="sec-title reveal">You're sharing something personal. Here's exactly how it's handled.</h2>
+    <p class="sec-sub reveal">Telling someone about a confusing situation takes trust. These are the rules built around it.</p>
+    <div class="trust-grid">
+      <div class="tcard reveal"><h3>&#127995; Nickname only</h3><p>A nickname stands in for them. The read works on behavior and language &mdash; not on who they are.</p></div>
+      <div class="tcard reveal"><h3>&#129535; No one reads your story</h3><p>Reads are generated automatically. Your conversation isn't reviewed or accessed by anyone on the team.</p></div>
+      <div class="tcard reveal"><h3>&#128465; Yours to keep or delete</h3><p>It's a read on your own dating decisions &mdash; not a file you build on someone else. Delete it anytime.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec alt">
+  <div class="inner">
+    <div class="sec-label reveal">Early results</div>
+    <h2 class="sec-title reveal">What people said after their first read.</h2>
+    <div class="count reveal"><span class="num" id="cnt">0</span><span>confusing conversations read this month</span></div>
+    <div class="tgrid">
+      <div class="tq reveal"><div class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div><p>&ldquo;It just showed me they reply warm but never plan &mdash; so I stopped chasing. I'd been re-reading one text all evening.&rdquo;</p><div class="who">&mdash; early tester</div></div>
+      <div class="tq reveal"><div class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div><p>&ldquo;The timeline was the thing. &lsquo;Warm, still no plan&rsquo; three weeks running told me what one message couldn't.&rdquo;</p><div class="who">&mdash; early tester</div></div>
+      <div class="tq reveal"><div class="stars">&#9733;&#9733;&#9733;&#9733;&#9734;</div><p>&ldquo;Comparing two people showed me I keep picking the same dynamic. That hit harder than any advice about them.&rdquo;</p><div class="who">&mdash; early tester</div></div>
+    </div>
+    <span class="note">Placeholder quotes &mdash; swap for real testers before launch. Don't ship invented testimonials.</span>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="inner">
+    <div class="sec-label reveal">Common situations</div>
+    <h2 class="sec-title reveal">These are harder to see when you're inside them.</h2>
+    <p class="sec-sub reveal">Each one is a pattern a read can help explain &mdash; not a final verdict, but a calm second opinion you can stand on.</p>
+    <div class="pgrid">
+      <div class="pcard reveal"><img src="https://res.cloudinary.com/duhk0jkin/image/upload/f_auto,q_auto/photo-session-6_xv8c1b" alt="" onerror="this.style.height='0'"/><div class="pcap"><span class="tag">Common pattern</span><h3>Mismatched effort</h3><p>One person invests; the other keeps it minimal or inconsistent.</p></div></div>
+      <div class="pcard reveal"><img src="https://res.cloudinary.com/duhk0jkin/image/upload/f_auto,q_auto/photo-session-2_2_sfg7ys" alt="" onerror="this.style.height='0'"/><div class="pcap"><span class="tag">Common pattern</span><h3>The story keeps shifting</h3><p>Details change, answers stay vague, the timeline doesn't match last week.</p></div></div>
+      <div class="pcard reveal"><img src="https://res.cloudinary.com/duhk0jkin/image/upload/f_auto,q_auto/photo-session-1_1_gx1eys" alt="" onerror="this.style.height='0'"/><div class="pcap"><span class="tag">Common pattern</span><h3>Available until they're not</h3><p>Warmth without real availability &mdash; vague excuses, interrupted plans.</p></div></div>
+      <div class="pcard reveal"><img src="https://res.cloudinary.com/duhk0jkin/image/upload/f_auto,q_auto/photo-session-4_1_w5obta" alt="" onerror="this.style.height='0'"/><div class="pcap"><span class="tag">Common pattern</span><h3>Says one thing, does another</h3><p>When their words, behavior, and plans all point different directions.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec alt">
+  <div class="inner">
+    <div class="sec-label reveal">What you get</div>
+    <h2 class="sec-title reveal">Built for clarity. Not drama.</h2>
+    <div class="feat">
+      <div class="frow reveal"><div class="ic">&#128270;</div><div><h3>Behavior read</h3><p>Your conversation turned into a calm read, pointing to what they actually did &mdash; not a guess at their feelings.</p></div></div>
+      <div class="frow reveal"><div class="ic">&#9878;</div><div><h3>Balanced, not a witch-hunt</h3><p>It names what's working as readily as what isn't &mdash; a read that only hunts for problems isn't trustworthy.</p></div></div>
+      <div class="frow reveal"><div class="ic">&#128172;</div><div><h3>What to say next</h3><p>A calm, direct message for when you want clarity or need to set a boundary &mdash; without the drama.</p></div></div>
+      <div class="frow reveal"><div class="ic">&#128200;</div><div><h3>The timeline</h3><p>Add updates as things change and watch how the situation really moves &mdash; the part one screenshot can't show.</p></div></div>
+      <div class="frow reveal"><div class="ic">&#129504;</div><div><h3>Spot your own patterns</h3><p>Compare situations and see if you keep choosing the same dynamic &mdash; the insight that's about you, not just them.</p></div></div>
+      <div class="frow reveal"><div class="ic">&#128274;</div><div><h3>Private, nickname only</h3><p>Each story is yours, under a nickname. No account needed to get your first read.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="inner">
+    <div class="sec-label reveal">Your space</div>
+    <h2 class="sec-title reveal">Not a file on them. A clearer picture of your own dating life.</h2>
+    <p class="sec-sub reveal">Each story sits under a private nickname and updates as things change &mdash; so instead of reading one chat and forgetting it, you can see the whole picture, and notice when you're repeating yourself.</p>
+    <div class="stories-frame reveal">
+      <div class="stories-bar"><div>&#9788; Your stories</div><div class="r">&#128274; Private to you &middot; no account needed</div></div>
+      <div class="stories-grid">
+        <div class="story">
+          <div class="story-top"><div class="story-av" style="background:var(--accent)">C</div><div><div class="story-name">Coffee guy</div><div class="story-meta">3 updates &middot; 2 days ago</div></div></div>
+          <div class="story-verdict">Warm, still no plan</div>
+          <div class="story-move">Their move next &mdash; don't carry the planning.</div>
+        </div>
+        <div class="story">
+          <div class="story-top"><div class="story-av" style="background:var(--green)">M</div><div><div class="story-name">Match from May</div><div class="story-meta">4 updates &middot; 1 week ago</div></div></div>
+          <div class="story-verdict">Consistent &amp; clear</div>
+          <div class="story-move">Showing up, plans land. You can relax.</div>
+        </div>
+        <div class="story">
+          <div class="story-top"><div class="story-av" style="background:var(--accent2)">H</div><div><div class="story-name">&ldquo;H from Hinge&rdquo;</div><div class="story-meta">2 updates &middot; today</div></div></div>
+          <div class="story-verdict">Hot then cold</div>
+          <div class="story-move">Same swing as one before &mdash; worth noticing.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec alt" id="pricing">
+  <div class="inner">
+    <div class="sec-label reveal">Pricing</div>
+    <h2 class="sec-title reveal">Start free. The value grows every week.</h2>
+    <p class="sec-sub reveal">No price wall in your face when you're anxious. Your read is free &mdash; you only pay for the part that follows the story over time.</p>
+    <div class="plans">
+      <div class="plan reveal">
+        <h3>Free read</h3>
+        <div class="price"><b>&euro;0</b></div>
+        <div class="per">your first read, always free</div>
+        <ul>
+          <li><i>&#10003;</i> Your full first read &mdash; behavior &amp; patterns</li>
+          <li><i>&#10003;</i> One clear next move</li>
+          <li><i>&#10003;</i> Explain their last message</li>
+          <li><i>&#10003;</i> Nickname-only privacy, no account</li>
+        </ul>
+        <a class="btn btn-ghost" href="app.html">Start free &#8594;</a>
+      </div>
+      <div class="plan feat2 reveal">
+        <span class="badge">Follows the story</span>
+        <h3>Companion</h3>
+        <div class="price"><b>&euro;4.90</b><span>/ month</span></div>
+        <div class="per">cancel anytime</div>
+        <ul>
+          <li><i>&#10003;</i> Save every story &amp; track it over weeks</li>
+          <li><i>&#10003;</i> The timeline &mdash; see how it really moves</li>
+          <li><i>&#10003;</i> Compare people &mdash; spot your own patterns</li>
+          <li><i>&#10003;</i> Deeper reads + reply help by tone</li>
+        </ul>
+        <a class="btn btn-accent" href="app.html">Start with a free read &#8594;</a>
+        <p class="plan-note">The timeline is the product. One read is a snapshot. A month of reads is a story.</p>
+      </div>
+    </div>
+    <p class="pay-honest">If you add your email, the read is actually sent to you &mdash; it's there so your story is waiting when they reply, not to chase you with offers.</p>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="inner">
+    <div class="sec-label reveal">FAQ</div>
+    <h2 class="sec-title reveal">Questions people ask before they start.</h2>
+    <div class="faq">
+      <details class="reveal"><summary>Can it tell if someone is lying to me?</summary><p>Not directly &mdash; and it won't pretend to. It reads behavior: gaps between what someone says and does, shifts in tone, plans that never land. It can't read minds, but it can read patterns, and it shows you the ones it sees so you decide.</p></details>
+      <details class="reveal"><summary>Does it score how much they like me?</summary><p>No. There's no made-up &ldquo;interest percentage&rdquo; &mdash; no one can measure another person's feelings, and a fake number just spikes your anxiety. It reads what you can actually point to: effort, consistency, whether plans get real.</p></details>
+      <details class="reveal"><summary>What should I share?</summary><p>The part around the moment that confused you &mdash; usually a handful of messages is enough for a first read. You don't need the whole history.</p></details>
+      <details class="reveal"><summary>Is this only for women?</summary><p>No &mdash; anyone can use it, any gender, orientation, or relationship type. The language reflects a common experience, but the read works for any dynamic.</p></details>
+      <details class="reveal"><summary>Will it just keep me hooked and anxious?</summary><p>That's the opposite of the point. When you've got your answer, it tells you to put the phone down. It's built to make you better at reading your own situations &mdash; not dependent on checking it.</p></details>
+      <details class="reveal"><summary>Is this therapy?</summary><p>No. Companion reads communication patterns. It doesn't diagnose anyone and doesn't replace therapy, coaching, or support. If you feel unsafe or at risk, please reach out to trusted people or local support services right away.</p></details>
+    </div>
+  </div>
+</section>
+
+<section class="final">
+  <div class="inner" style="max-width:680px">
+    <h2 class="reveal">You already know how it feels.<em>You just need someone to read it with you.</em></h2>
+    <p class="reveal">Paste the part that's been living in your head. See what their behavior is actually saying. Stop refreshing, decide with less doubt &mdash; free, private, and yours to keep.</p>
+    <a class="btn btn-accent reveal" href="app.html" style="margin:0 auto">Start a story &#8594;</a>
+    <div class="disclaimer reveal">Companion reads communication patterns to help you think. It does not diagnose people and does not replace professional help. If you feel unsafe, threatened, controlled, or at risk, contact trusted people or local support services immediately.</div>
+  </div>
+</section>
+
+<footer>
+  <div class="foot-in">
+    <div class="logo" style="font-size:14px"><div class="logo-mark" style="width:24px;height:24px;font-size:13px">&#9788;</div> Companion</div>
+    <div>Private by design &middot; nickname only &middot; reads behavior, not minds &middot; not a substitute for professional support</div>
+  </div>
+</footer>
+
+<script>
+  var lines=['You\u2019ve reread it for the tenth time.','Typed a reply. Deleted it. Typed it again.','Screenshotted it to three different friends.','Still watching for the three dots.','It\u2019s late and you\u2019re still decoding it.'];
+  var out=document.getElementById('typed'), li=0, ci=0, del=false;
+  function tw(){
+    var full=lines[li];
+    if(!del){ out.textContent=full.slice(0,++ci); if(ci===full.length){del=true; return setTimeout(tw,1500);} }
+    else{ out.textContent=full.slice(0,--ci); if(ci===0){del=false; li=(li+1)%lines.length;} }
+    setTimeout(tw, del?26:54);
+  }
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){ out.textContent=lines[0]; } else { tw(); }
+
+  var io=new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){
+        e.target.classList.add('in');
+        var fills=e.target.querySelectorAll ? e.target.querySelectorAll('.fill') : [];
+        fills.forEach(function(f){ f.style.width=f.dataset.pct+'%'; });
+        io.unobserve(e.target);
+      }
+    });
+  },{threshold:.15});
+  document.querySelectorAll('.reveal').forEach(function(el){ io.observe(el); });
+  setTimeout(function(){ document.querySelectorAll('.hero-card .fill').forEach(function(f){ f.style.width=f.dataset.pct+'%'; }); },350);
+
+  var cnt=document.getElementById('cnt'), target=3128, started=false;
+  var cio=new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting && !started){
+        started=true; var t0=performance.now(), dur=1400;
+        function step(now){ var p=Math.min((now-t0)/dur,1); var v=Math.round((1-Math.pow(1-p,3))*target); cnt.textContent=v.toLocaleString(); if(p<1) requestAnimationFrame(step); }
+        requestAnimationFrame(step);
+      }
+    });
+  },{threshold:.5});
+  if(cnt) cio.observe(cnt);
+</script>
+</body>
+</html>

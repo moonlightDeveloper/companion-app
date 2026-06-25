@@ -1,0 +1,83 @@
+/*
+ * Design tokens ported from the visual prototypes (index.html, app.html).
+ * The landing palette lives at :root; the guided-story screen uses a warmer
+ * variant, exposed as .storyTheme so its subtree can reference the same
+ * variable names with different values.
+ */
+:root {
+  /* Landing palette — from index.html */
+  --bg: #fbf1f0;
+  --paper: #fffafa;
+  --ink: #2a1416;
+  --muted: #8a6a6c;
+  --line: #f1d3d2;
+  --accent: #c0392f;
+  --accent-dk: #8f2620;
+  --accent2: #9a5a52;
+  --soft: #fdeceb;
+  --soft2: #fff4f3;
+  --green: #5e7e68;
+  --amber: #b8842d;
+  --warn: #c0392f;
+  --red: #c0392f;
+  --white: #fff;
+  --shadow: 0 24px 55px rgba(90, 20, 24, 0.15);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", sans-serif;
+}
+
+/* Guided-story palette — from app.html. Applied to the story screen wrapper. */
+.storyTheme {
+  --bg: #f6eee9;
+  --paper: #fffaf7;
+  --ink: #2f2521;
+  --muted: #7a6a63;
+  --line: #eadbd3;
+  --accent: #ce6d63;
+  --accent2: #8c6b54;
+  --soft: #f3e4de;
+  --soft2: #fff1eb;
+  --green: #5e7e68;
+  --amber: #b8842d;
+  --red: #c0524a;
+  --shadow: 0 24px 55px rgba(64, 40, 34, 0.14);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--bg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

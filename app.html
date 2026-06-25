@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Relationship Companion — v2 prototype</title>
+<style>
+  :root{
+    --bg:#f6eee9; --paper:#fffaf7; --ink:#2f2521; --muted:#7a6a63; --line:#eadbd3;
+    --accent:#ce6d63; --accent2:#8c6b54; --soft:#f3e4de; --soft2:#fff1eb;
+    --green:#5e7e68; --amber:#b8842d; --red:#c0524a;
+    --shadow:0 24px 55px rgba(64,40,34,.14);
+  }
+  @media (prefers-reduced-motion: reduce){ *{animation:none!important; transition:none!important} }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:grid;place-items:center;padding:20px;
+    background:radial-gradient(circle at 10% 0%,rgba(206,109,99,.20),transparent 28%),radial-gradient(circle at 90% 12%,rgba(184,132,45,.16),transparent 25%),var(--bg);
+    font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+  .phone{width:min(430px,100%);height:min(880px,95vh);background:var(--paper);border:1px solid rgba(234,219,211,.9);border-radius:38px;box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column;position:relative}
+  .topbar{padding:17px 18px 13px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;background:rgba(255,250,247,.94);backdrop-filter:blur(12px);z-index:5}
+  .back{width:36px;height:36px;border:0;border-radius:50%;background:var(--soft);font-size:20px;cursor:pointer;color:var(--ink);display:grid;place-items:center;visibility:hidden}
+  .brand{flex:1}.eyebrow{font-size:11px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase}.title{font-weight:800;font-size:15px;margin-top:2px}
+  .chip-top{font-size:11px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:7px 10px;color:var(--muted);font-weight:700}
+  .progress{height:4px;background:#f0e2dc}.bar{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),#d99a61);transition:.35s ease}
+  main{flex:1;overflow:auto;padding:22px 20px 26px}
+  .screen{display:none;min-height:100%;animation:fade .28s ease}.screen.active{display:flex;flex-direction:column}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  .hero h1{font-size:36px;line-height:1.05;margin:18px 0 12px;letter-spacing:-.04em}
+  .hero p{font-size:16px;line-height:1.55;color:var(--muted);margin:0 0 20px}
+  .case-label{display:inline-flex;align-items:center;gap:8px;background:var(--soft2);border:1px solid var(--line);color:var(--accent2);border-radius:999px;padding:8px 12px;font-size:12px;font-weight:700;width:max-content}
+  .punch{font-size:20px;font-weight:850;letter-spacing:-.02em;line-height:1.25;margin:6px 0 18px}
+  .punch span{color:var(--accent)}
+  .primary{width:100%;border:0;border-radius:20px;padding:17px 18px;background:var(--ink);color:#fff;font-weight:800;font-size:15px;cursor:pointer;box-shadow:0 12px 25px rgba(47,37,33,.18)}
+  .secondary{width:100%;border:1px solid var(--line);border-radius:18px;padding:15px;background:#fff;color:var(--ink);font-weight:750;cursor:pointer;margin-top:10px}
+  .ghost{background:none;border:0;color:var(--muted);font-weight:700;font-size:13px;cursor:pointer;margin-top:14px;text-decoration:underline}
+  .note-card{background:#fff;border:1px solid var(--line);border-radius:24px;padding:16px;box-shadow:0 12px 28px rgba(64,40,34,.07);margin-top:18px}
+  .note-card h3{margin:0 0 6px;font-size:14px}.note-card p{margin:0;color:var(--muted);line-height:1.45;font-size:13px}
+
+  .step-head{margin-bottom:20px}.step-count{font-size:12px;color:var(--muted);font-weight:800;letter-spacing:.04em}
+  .question-wrap{min-height:104px;margin-top:12px}
+  h2.question{font-size:28px;line-height:1.14;letter-spacing:-.035em;margin:0}
+  .subtext{font-size:14px;line-height:1.5;color:var(--muted);margin:12px 0 0}
+  .typing-row{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;margin-top:10px}
+  .dots{display:inline-flex;gap:4px}.dots span{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:bounce 1s infinite}
+  .dots span:nth-child(2){animation-delay:.15s}.dots span:nth-child(3){animation-delay:.3s}
+  @keyframes bounce{0%,80%,100%{opacity:.28;transform:translateY(0)}40%{opacity:1;transform:translateY(-4px)}}
+
+  .options{display:grid;gap:10px;margin-top:6px}
+  .option{border:1px solid var(--line);background:#fff;border-radius:18px;padding:15px 16px;text-align:left;cursor:pointer;transition:.16s ease;display:flex;align-items:center;justify-content:space-between;gap:12px;font-weight:760;color:var(--ink)}
+  .option:hover{transform:translateY(-1px);border-color:#dfb8ac}
+  .option small{display:block;font-weight:500;color:var(--muted);margin-top:4px}
+  .option:after{content:'\203A';font-size:22px;color:var(--accent)}
+  input,textarea{width:100%;border:1px solid var(--line);background:#fff;border-radius:20px;padding:15px;font:inherit;color:var(--ink);outline:none}
+  textarea{min-height:150px;resize:none;line-height:1.45}
+  input:focus,textarea:focus{border-color:var(--accent)}
+  .spacer{flex:1}
+  .footer-actions{position:sticky;bottom:-26px;background:linear-gradient(transparent,var(--paper) 26%);padding-top:24px;margin-top:auto}
+
+  .reflection{justify-content:center}
+  .big-note{font-size:27px;line-height:1.16;letter-spacing:-.03em;font-weight:850;margin:0 0 14px}
+  .soft-note{font-size:15px;color:var(--muted);line-height:1.55}
+
+  .status{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 16px}
+  .pill{background:var(--soft2);border:1px solid var(--line);border-radius:999px;padding:7px 11px;font-size:12px;font-weight:800;color:var(--accent2)}
+
+  .bars{display:flex;flex-direction:column;gap:15px;margin-top:4px}
+  .barhead{display:flex;justify-content:space-between;font-size:13px;margin-bottom:7px}
+  .barhead b{font-weight:800}.barhead span{color:var(--muted)}
+  .track{height:9px;background:#efe1da;border-radius:999px;overflow:hidden}
+  .fill{height:100%;width:0;border-radius:999px;transition:width 1s cubic-bezier(.2,.7,.2,1)}
+  .barcap{margin:7px 0 0;font-size:12px;color:var(--muted);line-height:1.4}
+
+  .insight{background:#fff;border:1px solid var(--line);border-radius:20px;padding:15px;box-shadow:0 12px 24px rgba(64,40,34,.055);margin-top:12px}
+  .insight .k{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:850}
+  .insight h3{margin:7px 0 6px;font-size:16px}.insight p{margin:0;color:var(--muted);line-height:1.45;font-size:13px}
+  .relax{border-color:#cfe0d2;background:#f4f9f5}.relax .k{color:var(--green)}
+
+  .earn{margin-top:14px;border:1px dashed #d8c2ba;border-radius:20px;padding:15px;background:var(--soft2)}
+  .earn p{margin:0 0 10px;font-size:13px;line-height:1.5}.earn b{font-weight:800}
+  .mini{border:0;background:var(--accent);color:#fff;font-weight:800;font-size:13px;border-radius:14px;padding:11px 14px;cursor:pointer}
+
+  .memory-list{display:grid;gap:10px;margin-top:8px}
+  .memory{display:flex;gap:10px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:13px;color:var(--muted);line-height:1.35;font-size:14px}
+  .memory b{color:var(--ink)}
+
+  .save-card{background:#fff;border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 12px 28px rgba(64,40,34,.07)}
+  .save-card h3{margin:0 0 6px;font-size:16px}.save-card p{margin:0 0 14px;font-size:13px;color:var(--muted);line-height:1.5}
+  .save-card .fineprint{margin:12px 0 0;font-size:11px;color:var(--muted);display:flex;gap:7px;align-items:flex-start;line-height:1.4}
+
+  .timeline{position:relative;display:grid;gap:13px;margin-top:14px}
+  .event{border-left:3px solid var(--soft);padding-left:14px}
+  .event.good{border-color:var(--green)}.event.watch{border-color:var(--amber)}
+  .event b{display:block;font-size:14px}.event span{font-size:12px;color:var(--muted)}
+  .trend{margin-top:16px;background:#fff;border:1px solid var(--line);border-radius:18px;padding:14px;font-size:13px;color:var(--muted);line-height:1.5}
+  .trend b{color:var(--ink)}
+
+  .compare-row{display:flex;gap:10px;margin-top:14px}
+  .ppl{flex:1;border:1px solid var(--line);background:#fff;border-radius:18px;padding:14px;text-align:center}
+  .ppl .av{width:38px;height:38px;border-radius:50%;margin:0 auto 8px;display:grid;place-items:center;font-weight:800;color:#fff}
+  .ppl b{font-size:14px}.ppl span{display:block;font-size:11px;color:var(--muted);margin-top:3px}
+  .pattern{margin-top:16px;background:var(--soft2);border:1px solid var(--line);border-radius:18px;padding:15px;font-size:13px;line-height:1.5}
+  .pattern b{font-weight:850;color:var(--accent2)}
+
+  .lock{position:absolute;inset:0;background:rgba(47,37,33,.34);backdrop-filter:blur(2px);display:none;align-items:flex-end;z-index:20}
+  .lock.show{display:flex}
+  .sheet{background:var(--paper);width:100%;border-radius:28px 28px 0 0;padding:24px 22px 26px;animation:slideup .3s ease}
+  @keyframes slideup{from{transform:translateY(40px);opacity:.6}to{transform:none;opacity:1}}
+  .sheet .lab{display:inline-flex;gap:7px;align-items:center;background:var(--soft2);border:1px solid var(--line);color:var(--accent2);border-radius:999px;padding:7px 11px;font-size:12px;font-weight:800}
+  .sheet h2{font-size:24px;letter-spacing:-.03em;margin:14px 0 8px}
+  .sheet p{margin:0 0 14px;color:var(--muted);font-size:14px;line-height:1.5}
+  .perks{display:grid;gap:9px;margin:0 0 18px}
+  .perk{display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--ink)}
+  .perk i{color:var(--green);font-weight:900}
+  .price{display:flex;align-items:baseline;gap:8px;margin:0 0 14px}
+  .price b{font-size:26px}.price span{font-size:13px;color:var(--muted)}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="topbar">
+    <button class="back" id="backBtn" aria-label="Back">&#8249;</button>
+    <div class="brand"><div class="eyebrow" id="topEyebrow">Private story</div><div class="title" id="topTitle">Companion</div></div>
+    <div class="chip-top" id="topChip">private</div>
+  </div>
+  <div class="progress"><div class="bar" id="bar"></div></div>
+  <main id="app"></main>
+
+  <div class="lock" id="lock">
+    <div class="sheet">
+      <span class="lab">&#128274; The part that follows the story</span>
+      <h2 id="lockTitle">Keep this story going.</h2>
+      <p id="lockSub">Your first read is free. This is the part that actually pays off over weeks — when they reply, when plans change, when you want to know if it's a pattern.</p>
+      <div class="perks">
+        <div class="perk"><i>&#10003;</i><span>Save every story and track how it moves over time</span></div>
+        <div class="perk"><i>&#10003;</i><span>Compare people — see if you're repeating a pattern</span></div>
+        <div class="perk"><i>&#10003;</i><span>Deeper reads + reply help, tuned by tone</span></div>
+      </div>
+      <div class="price"><b>&euro;4.90</b><span>/ month · cancel anytime</span></div>
+      <button class="primary" onclick="closeLock(true)">Continue</button>
+      <button class="ghost" style="display:block;margin:14px auto 0" onclick="closeLock(false)">Not now — keep my free read</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const app=document.getElementById('app'), backBtn=document.getElementById('backBtn'), bar=document.getElementById('bar');
+const topTitle=document.getElementById('topTitle'), topEyebrow=document.getElementById('topEyebrow'), topChip=document.getElementById('topChip');
+const lock=document.getElementById('lock'), lockTitle=document.getElementById('lockTitle'), lockSub=document.getElementById('lockSub');
+
+let answers={name:'Alex', origin:'', situation:'', issue:'', met:'', plans:'', feeling:''};
+let isPaid=false, lockNext=null;
+let history=[], current='cover';
+
+const intakeFlow=['cover','name','origin','situation','issue','reflection','paste','met','plans','feeling','read'];
+const qText={
+  name:'Who are we trying to understand?',
+  origin:'How did this story start?',
+  situation:'What kind of situation is this?',
+  issue:'What\u2019s making you unsure right now?',
+  met:'Have you two actually met in person?',
+  plans:'When plans come up, what usually happens?',
+  feeling:'After you talk to them, how do you usually feel?'
+};
+
+/* ---------- engine ---------- */
+function setTop(){
+  const n=answers.name||'their';
+  topTitle.textContent = current==='cover' ? 'Companion' : `${n}\u2019s story`;
+  const eyebrowMap={cover:'Private story',read:'What I\u2019m noticing',deepen:'Going deeper',memory:'Memory',save:'Save your story',hub:'Your space',reply:'Reply help',explain:'Their last message',update:'New update',timeline:'Timeline',compare:'Patterns'};
+  topEyebrow.textContent=eyebrowMap[current]||'Private story';
+  topChip.textContent = isPaid ? 'saved' : 'private';
+  backBtn.style.visibility=history.length?'visible':'hidden';
+  const idx=intakeFlow.indexOf(current);
+  bar.style.width = current==='cover'?'0%' : idx<0?'100%' : Math.round((idx/(intakeFlow.length-1))*100)+'%';
+}
+function go(id,push=true){ if(push&&current!==id) history.push(current); current=id; render(); }
+function back(){ if(!history.length)return; current=history.pop(); render(false); }
+backBtn.onclick=back;
+
+function type(el,text,done){
+  el.textContent='';
+  const row=document.createElement('div'); row.className='typing-row';
+  row.innerHTML='<span>typing</span><span class="dots"><span></span><span></span><span></span></span>';
+  el.after(row);
+  setTimeout(()=>{ let i=0; const t=setInterval(()=>{ el.textContent=text.slice(0,++i); if(i>=text.length){clearInterval(t);row.remove();if(done)done();} },16); },560);
+}
+
+/* premium gate: opens at peak value, never at the start */
+function gate(next,title,sub){
+  if(isPaid){ go(next); return; }
+  lockNext=next;
+  lockTitle.textContent=title||'Keep this story going.';
+  lockSub.textContent=sub||lockSub.textContent;
+  lock.classList.add('show');
+}
+function closeLock(buy){ lock.classList.remove('show'); if(buy){isPaid=true;setTop();} if(lockNext){const n=lockNext;lockNext=null;go(n);} }
+
+function questionScreen(key,opts,next){
+  setTop();
+  app.innerHTML=`<section class="screen active"><div class="step-head">
+    <div class="step-count">${Math.max(1,intakeFlow.indexOf(current))} / 9</div>
+    <div class="question-wrap"><h2 class="question" id="q"></h2></div>
+    <p class="subtext hidden" id="sub">Pick what feels closest. You can go back anytime.</p>
+    </div><div class="options hidden" id="opts"></div></section>`;
+  const q=document.getElementById('q'),sub=document.getElementById('sub'),box=document.getElementById('opts');
+  type(q,qText[key],()=>{
+    sub.classList.remove('hidden'); box.classList.remove('hidden');
+    box.innerHTML=opts.map(o=>`<button class="option" data-v="${o.v}"><span>${o.label}${o.hint?`<small>${o.hint}</small>`:''}</span></button>`).join('');
+    box.querySelectorAll('.option').forEach(b=>b.onclick=()=>{answers[key]=b.dataset.v; go(typeof next==='function'?next():next);});
+  });
+}
+
+/* ---------- screens ---------- */
+function render(){
+  setTop();
+  switch(current){
+    case 'cover': return cover();
+    case 'name': return nameScreen();
+    case 'origin': return questionScreen('origin',[
+      {v:'Dating app',label:'Dating app'},{v:'Instagram',label:'Instagram / DMs'},
+      {v:'Friends',label:'Through friends'},{v:'Work',label:'Work or school'},
+      {v:'Ex',label:'An ex, reconnecting'},{v:'Other',label:'Other'}],'situation');
+    case 'situation': return questionScreen('situation',[
+      {v:'Early dating',label:'Early dating'},{v:'Situationship',label:'Situationship'},
+      {v:'Relationship',label:'In a relationship'},{v:'After a fight',label:'After a fight'},
+      {v:'Long distance',label:'Long distance'}],'issue');
+    case 'issue': return questionScreen('issue',[
+      {v:'Mixed signals',label:'They send mixed signals'},{v:'Slow replies',label:'They reply slowly'},
+      {v:'Avoiding plans',label:'They avoid making real plans'},{v:'Unclear interest',label:'I can\u2019t tell if they like me'},
+      {v:'Anxious',label:'I feel anxious and want to calm down'},{v:'Reply help',label:'I want help replying'}],'reflection');
+    case 'reflection': return reflection();
+    case 'paste': return paste();
+    case 'met': return questionScreen('met',[
+      {v:'Yes',label:'Yes, we\u2019ve met'},{v:'Not yet',label:'Not yet'},
+      {v:'Plans fell through',label:'We had plans, it didn\u2019t happen'},{v:'Skip',label:'Rather not say'}],'plans');
+    case 'plans': return questionScreen('plans',[
+      {v:'Clear',label:'They agree clearly'},{v:'Avoid',label:'They dodge it'},
+      {v:'Maybe',label:'They say \u201cmaybe\u201d'},{v:'Not yet',label:'I haven\u2019t suggested one'}],'feeling');
+    case 'feeling': return questionScreen('feeling',[
+      {v:'Calm',label:'Calm'},{v:'Excited',label:'Excited'},{v:'Confused',label:'Confused'},
+      {v:'Anxious',label:'Anxious'},{v:'Drained',label:'Drained'}],'read');
+    case 'read': return read();
+    case 'deepen': return deepen();
+    case 'memory': return memory();
+    case 'save': return save();
+    case 'hub': return hub();
+    case 'reply': return reply();
+    case 'explain': return explain();
+    case 'update': return update();
+    case 'timeline': return timeline();
+    case 'compare': return compare();
+  }
+}
+
+function cover(){
+  app.innerHTML=`<section class="screen active"><div class="hero">
+    <span class="case-label">No avatar &middot; no dashboard &middot; just the story</span>
+    <p class="punch" style="margin-top:18px">You\u2019re not their person yet. Right now <span>you\u2019re their option</span> \u2014 let\u2019s see which way it\u2019s actually moving.</p>
+    <h1>Just had a confusing conversation?</h1>
+    <p>Tell me what\u2019s happening, paste the part that matters, and I\u2019ll show you what their <b>behavior</b> is really saying \u2014 one question at a time.</p>
+    <button class="primary" onclick="go('name')">Start a story</button>
+    <div class="note-card"><h3>This isn\u2019t a chatbot</h3><p>It asks like a friend who\u2019s paying attention, remembers the context, and helps you decide what to do \u2014 then gets out of your way when you\u2019ve got your answer.</p></div>
+  </div></section>`;
+}
+
+function nameScreen(){
+  app.innerHTML=`<section class="screen active"><div class="step-head">
+    <div class="step-count">1 / 9</div>
+    <div class="question-wrap"><h2 class="question" id="q"></h2></div>
+    <p class="subtext hidden" id="sub">Use a nickname only you\u2019d recognise \u2014 never their real name. \u201cBumble guy\u201d works.</p>
+    </div><div class="spacer"></div>
+    <div class="footer-actions"><input id="nameInput" placeholder="e.g. Coffee guy" value="${answers.name||''}"/>
+    <button class="primary" style="margin-top:12px" id="cont">Continue</button></div></section>`;
+  type(document.getElementById('q'),qText.name,()=>document.getElementById('sub').classList.remove('hidden'));
+  document.getElementById('cont').onclick=()=>{answers.name=document.getElementById('nameInput').value.trim()||'Alex';go('origin');};
+}
+
+function reflection(){
+  app.innerHTML=`<section class="screen active reflection">
+    <p class="big-note" id="ref"></p>
+    <p class="soft-note hidden" id="soft">I\u2019ve got the shape of it. Now I need the actual conversation \u2014 just the part that matters, even a few lines.</p>
+    <div class="footer-actions"><button class="primary hidden" id="next">Show me the conversation</button></div></section>`;
+  type(document.getElementById('ref'),`Okay \u2014 I\u2019ll look at ${answers.name} through what you\u2019ve told me, not in a vacuum.`,()=>{
+    document.getElementById('soft').classList.remove('hidden');
+    document.getElementById('next').classList.remove('hidden');
+  });
+  document.getElementById('next') && (document.getElementById('next').onclick=()=>go('paste'));
+}
+
+function paste(){
+  app.innerHTML=`<section class="screen active"><div class="step-head">
+    <div class="step-count">5 / 9</div>
+    <div class="question-wrap"><h2 class="question" id="q"></h2></div>
+    <p class="subtext hidden" id="sub">Paste only what matters. Screenshots can come later. Names stay private.</p>
+    </div>
+    <textarea id="chat" placeholder="Paste a few lines\u2026
+
+Coffee guy: haha maybe Friday
+You: sounds good, what time?
+Coffee guy: i\u2019ll let you know"></textarea>
+    <div class="footer-actions"><button class="primary" onclick="go('met')">Continue ${answers.name}\u2019s story</button></div></section>`;
+  type(document.getElementById('q'),'Show me the conversation.',()=>document.getElementById('sub').classList.remove('hidden'));
+}
+
+function read(){
+  app.innerHTML=`<section class="screen active"><div class="step-head">
+    <div class="question-wrap" style="min-height:60px"><h2 class="question" id="q"></h2></div>
+    <p class="subtext hidden" id="sub">Based only on what you shared. I read behavior \u2014 I won\u2019t pretend to know their feelings.</p>
+    </div>
+    <div class="status hidden" id="status">
+      <span class="pill">&#128993; Warm but vague</span><span class="pill">Free read</span>
+    </div>
+    <div class="bars hidden" id="bars"></div>
+    <div id="cards" class="hidden"></div>
+    <div class="footer-actions"><button class="primary hidden" id="save">What should I remember?</button></div></section>`;
+  type(document.getElementById('q'),`Here\u2019s what I\u2019m noticing about ${answers.name}.`,()=>{
+    document.getElementById('sub').classList.remove('hidden');
+    document.getElementById('status').classList.remove('hidden');
+    const bars=document.getElementById('bars'); bars.classList.remove('hidden');
+    const data=[
+      {label:'Effort balance',tag:'leaning your way',pct:72,color:'var(--amber)',cap:'You open most threads and suggest most of the plans.'},
+      {label:'Plan clarity',tag:'stays vague',pct:28,color:'var(--red)',cap:'\u201cMaybe Friday,\u201d \u201cI\u2019ll let you know\u201d \u2014 no time ever lands.'},
+      {label:'Reply consistency',tag:'steady',pct:80,color:'var(--green)',cap:'They do reply, fairly warmly, usually within a day.'}
+    ];
+    bars.innerHTML=data.map(d=>`<div><div class="barhead"><b>${d.label}</b><span>${d.tag}</span></div>
+      <div class="track"><div class="fill" style="background:${d.color}"></div></div>
+      <p class="barcap">${d.cap}</p></div>`).join('');
+    const fills=bars.querySelectorAll('.fill');
+    setTimeout(()=>fills.forEach((f,i)=>f.style.width=data[i].pct+'%'),120);
+
+    const cards=document.getElementById('cards'); cards.classList.remove('hidden');
+    cards.innerHTML=`
+      <div class="insight"><div class="k">Pattern</div><h3>Warm, but never concrete</h3><p>They keep the conversation alive and pleasant, yet the next real step stays open-ended.</p></div>
+      <div class="insight"><div class="k">What I\u2019d watch</div><h3>Their move, not your chase</h3><p>The next concrete thing they do matters more than the next nice message. Don\u2019t carry the planning alone.</p></div>
+      <div class="insight relax"><div class="k">Where this leaves you</div><h3>You can put the phone down</h3><p>Nothing here says you should panic. You\u2019ve got a clear read for today \u2014 you don\u2019t need to check this every hour. Come back if something actually changes.</p></div>`;
+    document.getElementById('save').classList.remove('hidden');
+  });
+  document.getElementById('save') && (document.getElementById('save').onclick=()=>go('memory'));
+}
+
+function memory(){
+  app.innerHTML=`<section class="screen active"><div class="step-head">
+    <div class="question-wrap" style="min-height:60px"><h2 class="question" id="q"></h2></div>
+    <p class="subtext hidden" id="sub">This is what makes it a companion and not a one-off answer box.</p></div>
+    <div class="memory-list hidden" id="mem">
+      <div class="memory">&#10003; <span><b>${answers.name}</b> started from ${answers.origin||'a dating app'} \u2014 ${answers.situation||'early dating'}.</span></div>
+      <div class="memory">&#10003; <span>Your main worry is <b>${answers.issue||'mixed signals'}</b>.</span></div>
+      <div class="memory">&#10003; <span>You tend to feel <b>${answers.feeling||'unsure'}</b> afterwards.</span></div>
+      <div class="memory">&#10003; <span>Today\u2019s read: <b>warm but vague \u2014 watch effort, don\u2019t chase.</b></span></div>
+    </div>
+    <div class="footer-actions"><button class="primary hidden" id="next">Save this story</button></div></section>`;
+  type(document.getElementById('q'),`I\u2019ll remember these about ${answers.name}.`,()=>{
+    document.getElementById('sub').classList.remove('hidden');
+    document.getElementById('mem').classList.remove('hidden');
+    document.getElementById('next').classList.remove('hidden');
+  });
+  document.getElementById('next') && (document.getElementById('next').onclick=()=>go('save'));
+}
+
+function save(){
+  app.innerHTML=`<section class="screen active"><div class="step-head">
+    <div class="question-wrap" style="min-height:50px"><h2 class="question" id="q"></h2></div></div>
+    <div class="save-card">
+      <h3>Pick it up when something changes</h3>
+      <p>Add your email and I\u2019ll send you this read and keep ${answers.name}\u2019s story here, ready for the next update. No spam, no daily nudges.</p>
+      <input id="email" type="email" placeholder="you@email.com"/>
+      <button class="primary" style="margin-top:12px" onclick="go('hub')">Email me my read &amp; save it</button>
+      <p class="fineprint">&#9993; We actually send the report \u2014 the email is so your story is here when they reply, not to chase you.</p>
+    </div>
+    <button class="ghost" style="display:block;margin:16px auto 0" onclick="go('hub')">Skip \u2014 just keep it on this device</button>
+    </section>`;
+  type(document.getElementById('q'),'Want to keep this?',()=>{});
+}
+
+function hub(){
+  app.innerHTML=`<section class="screen active"><div class="step-head">
+    <div class="question-wrap" style="min-height:50px"><h2 class="question" id="q"></h2></div>
+    <p class="subtext hidden" id="sub">Free things stay free. The lock means \u201cfollows the story over time.\u201d</p></div>
+    <div class="options hidden" id="opts">
+      <button class="option" onclick="go('explain')"><span>Explain their last message<small>Free</small></span></button>
+      <button class="option" onclick="go('reply')"><span>Help me reply<small>Free \u2014 one calm version</small></span></button>
+      <button class="option" onclick="go('update')"><span>Add a new update<small>When they reply or something shifts</small></span></button>
+      <button class="option" onclick="gate('timeline','See the whole timeline','Your latest read is free. The timeline shows how ${answers.name} has moved across days \u2014 that\u2019s the part worth keeping.')"><span>&#128274; View ${answers.name}\u2019s timeline<small>Tracks the story over time</small></span></button>
+      <button class="option" onclick="gate('compare','Are you repeating a pattern?','This compares ${answers.name} with a past situation and tells you something about you \u2014 not just them.')"><span>&#128274; Compare with someone else<small>Spot your own patterns</small></span></button>
+    </div></section>`;
+  type(document.getElementById('q'),'What do you want to do next?',()=>{
+    document.getElementById('sub').classList.remove('hidden');
+    document.getElementById('opts').classList.remove('hidden');
+  });
+}
+
+function explain(){
+  app.innerHTML=`<section class="screen active"><div class="step-head">
+    <div class="question-wrap" style="min-height:50px"><h2 class="question" id="q"></h2></div></div>
+    <div class="insight"><div class="k">\u201cI\u2019ll let you know\u201d</div><h3>It\u2019s a soft hold, not a no</h3><p>It keeps the door open without committing. On its own it\u2019s neutral \u2014 it only means something paired with what they do next.</p></div>
+    <div class="earn" id="earn">
+      <p><b>Want the sharper read?</b> Tell me two quick things and I\u2019ll say whether this is a one-off or how ${answers.name} usually operates.</p>
+      <button class="mini" onclick="go('deepen')">Answer 2 things &#8594;</button>
+    </div>
+    <div class="footer-actions"><button class="secondary" onclick="go('hub')">Back to your space</button></div></section>`;
+  type(document.getElementById('q'),`What did ${answers.name} mean?`,()=>{});
+}
+
+function deepen(){
+  app.innerHTML=`<section class="screen active"><div class="step-head">
+    <div class="step-count">Earning a sharper read</div>
+    <div class="question-wrap" style="min-height:70px"><h2 class="question" id="q"></h2></div>
+    <p class="subtext hidden" id="sub">Each answer buys you a clearer read \u2014 not more questions for the sake of it.</p></div>
+    <div class="options hidden" id="opts">
+      <button class="option" onclick="finishDeepen()"><span>It\u2019s happened a few times now</span></button>
+      <button class="option" onclick="finishDeepen()"><span>This is the first time</span></button>
+      <button class="option" onclick="finishDeepen()"><span>Honestly, I\u2019m not sure</span></button>
+    </div></section>`;
+  type(document.getElementById('q'),'When they go vague \u2014 is this new, or familiar?',()=>{
+    document.getElementById('sub').classList.remove('hidden');
+    document.getElementById('opts').classList.remove('hidden');
+  });
+}
+function finishDeepen(){
+  app.innerHTML=`<section class="screen active"><div class="step-head">
+    <div class="question-wrap" style="min-height:50px"><h2 class="question" id="q"></h2></div></div>
+    <div class="insight"><div class="k">Sharper read</div><h3>This is their pattern, not a mood</h3><p>Warm-then-vague is how ${answers.name} keeps options open. That\u2019s useful information: it means one clear, low-pressure ask from you will tell you almost everything.</p></div>
+    <div class="insight relax"><div class="k">Where this leaves you</div><h3>You don\u2019t need to over-read each text</h3><p>You\u2019ve learned the shape now. Send one clear invite, then let their answer \u2014 not their wording \u2014 decide it.</p></div>
+    <div class="footer-actions"><button class="primary" onclick="go('reply')">Help me send that one message</button>
+    <button class="secondary" onclick="go('hub')">Back to your space</button></div></section>`;
+  type(document.getElementById('q'),'Here\u2019s the sharper read.',()=>{});
+}
+
+function reply(){
+  app.innerHTML=`<section class="screen active"><div class="step-head">
+    <div class="question-wrap" style="min-height:50px"><h2 class="question" id="q"></h2></div>
+    <p class="subtext hidden" id="sub">One calm version is free. Tone variations are part of keeping the story going.</p></div>
+    <div id="opts" class="hidden">
+      <div class="insight"><div class="k">Calm &amp; clear &middot; free</div><p style="font-size:14px;color:var(--ink);line-height:1.5">\u201cI\u2019d love to actually see you \u2014 are you free Friday or shall we aim for next week? Either\u2019s good, just want a real plan.\u201d</p></div>
+      <button class="option" style="margin-top:12px" onclick="gate('reply','More tones, your way','Want the same message playful, warmer, or more direct? Tone tuning is part of the ongoing companion.')"><span>&#128274; Try other tones<small>Playful &middot; warm &middot; direct</small></span></button>
+    </div>
+    <div class="footer-actions"><button class="secondary" onclick="go('hub')">Back to your space</button></div></section>`;
+  type(document.getElementById('q'),'Let\u2019s give them a clear opening.',()=>{
+    document.getElementById('sub').classList.remove('hidden');
+    document.getElementById('opts').classList.remove('hidden');
+  });
+}
+
+function update(){
+  app.innerHTML=`<section class="screen active"><div class="step-head">
+    <div class="question-wrap" style="min-height:50px"><h2 class="question" id="q"></h2></div>
+    <p class="subtext hidden" id="sub">Paste their new message or just say what happened.</p></div>
+    <textarea placeholder="They replied: \u201cSorry, mad week \u2014 maybe next week?\u201d"></textarea>
+    <div class="footer-actions"><button class="primary" onclick="gate('timeline','Add this to the timeline','Updates are free to write. Seeing them line up over time \u2014 the part that shows where this is really going \u2014 is the saved story.')">Add to ${answers.name}\u2019s story</button></div></section>`;
+  type(document.getElementById('q'),'What happened?',()=>document.getElementById('sub').classList.remove('hidden'));
+}
+
+function timeline(){
+  app.innerHTML=`<section class="screen active"><div class="step-head">
+    <div class="question-wrap" style="min-height:50px"><h2 class="question" id="q"></h2></div></div>
+    <div class="timeline">
+      <div class="event good"><b>Day 1 \u2014 Strong start</b><span>Warm, curious, replies fast.</span></div>
+      <div class="event watch"><b>Day 3 \u2014 Plans stay open</b><span>Friendly, but \u201cmaybe\u201d never became a time.</span></div>
+      <div class="event watch"><b>Day 6 \u2014 \u201cMaybe next week\u201d</b><span>Same warmth, still no concrete plan.</span></div>
+    </div>
+    <div class="trend">Across the week the warmth held steady but the <b>plan clarity never moved</b>. That\u2019s the signal that matters \u2014 not any single message. One clear invite from you is the fair test now.</div>
+    <div class="footer-actions"><button class="primary" onclick="go('update')">Add another update</button>
+    <button class="secondary" onclick="go('hub')">Back to your space</button></div></section>`;
+  type(document.getElementById('q'),`${answers.name}\u2019s timeline`,()=>{});
+}
+
+function compare(){
+  app.innerHTML=`<section class="screen active"><div class="step-head">
+    <div class="question-wrap" style="min-height:50px"><h2 class="question" id="q"></h2></div></div>
+    <div class="compare-row">
+      <div class="ppl"><div class="av" style="background:var(--accent)">${(answers.name||'A')[0].toUpperCase()}</div><b>${answers.name}</b><span>warm &middot; vague plans</span></div>
+      <div class="ppl"><div class="av" style="background:var(--accent2)">J</div><b>Last one</b><span>warm &middot; vague plans</span></div>
+    </div>
+    <div class="pattern"><b>The pattern is yours to see:</b> both started warm and stalled at the planning step \u2014 and both times you carried the effort. That\u2019s not bad luck, it\u2019s a type you keep choosing. The fix isn\u2019t a better text, it\u2019s noticing it sooner.</div>
+    <div class="footer-actions"><button class="secondary" onclick="go('hub')">Back to your space</button></div></section>`;
+  type(document.getElementById('q'),'Are you repeating a pattern?',()=>{});
+}
+
+render();
+</script>
+</body>
+</html>
