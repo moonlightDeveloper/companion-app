@@ -16,6 +16,7 @@ type Screen =
   | "met"
   | "plans"
   | "feeling"
+  | "email"
   | "read";
 
 const FLOW: Screen[] = [
@@ -29,6 +30,7 @@ const FLOW: Screen[] = [
   "met",
   "plans",
   "feeling",
+  "email",
   "read",
 ];
 
@@ -114,6 +116,9 @@ export default function Story() {
   const [status, setStatus] = useState<Status>("idle");
   const [read, setRead] = useState<Read | null>(null);
   const [error, setError] = useState("");
+  const [email, setEmail] = useState("");
+  const [consent, setConsent] = useState(false);
+  const [emailed, setEmailed] = useState(true);
 
   const name = answers.name.trim() || "this person";
 
@@ -140,19 +145,21 @@ export default function Story() {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(answers),
+        body: JSON.stringify({ ...answers, email, consent }),
       });
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data?.error || "Something went wrong.");
       }
-      setRead(data as Read);
+      const { emailed: sent, ...rest } = data as Read & { emailed?: boolean };
+      setEmailed(sent !== false);
+      setRead(rest as Read);
       setStatus("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setStatus("error");
     }
-  }, [answers]);
+  }, [answers, email, consent]);
 
   // Kick off the live read when we land on the read screen.
   useEffect(() => {
@@ -230,12 +237,24 @@ export default function Story() {
             />
           )}
 
+          {screen === "email" && (
+            <EmailScreen
+              name={name}
+              email={email}
+              consent={consent}
+              setEmail={setEmail}
+              setConsent={setConsent}
+              onUnlock={() => go("read")}
+            />
+          )}
+
           {screen === "read" && (
             <ReadScreen
               name={name}
               status={status}
               read={read}
               error={error}
+              emailed={emailed}
               onRetry={runAnalyze}
             />
           )}
@@ -258,7 +277,7 @@ function nextOf(screen: Screen): Screen {
     case "plans":
       return "feeling";
     case "feeling":
-      return "read";
+      return "email";
     default:
       return "read";
   }
@@ -492,17 +511,91 @@ function Paste({
   );
 }
 
+function EmailScreen({
+  name,
+  email,
+  consent,
+  setEmail,
+  setConsent,
+  onUnlock,
+}: {
+  name: string;
+  email: string;
+  consent: boolean;
+  setEmail: (v: string) => void;
+  setConsent: (v: boolean) => void;
+  onUnlock: () => void;
+}) {
+  const { display, done } = useTypewriter("Where should I send your read?");
+  const [touched, setTouched] = useState(false);
+  const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const ready = valid && consent;
+
+  return (
+    <section className={styles.screen}>
+      <div className={styles.stepHead}>
+        <div className={styles.questionWrap}>
+          <h2 className={styles.question}>{display}</h2>
+        </div>
+        {done && (
+          <p className={styles.subtext}>
+            Free &mdash; add your email to unlock {name}&rsquo;s read. You&rsquo;ll
+            see it here and get a copy in your inbox.
+          </p>
+        )}
+      </div>
+      <div className={styles.spacer} />
+      <div className={styles.footerActions}>
+        <input
+          className={styles.input}
+          type="email"
+          placeholder="you@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onBlur={() => setTouched(true)}
+        />
+        {touched && !valid && (
+          <p className={styles.subtext} style={{ color: "var(--red)", marginTop: 8 }}>
+            That doesn&rsquo;t look like a valid email.
+          </p>
+        )}
+        <label className={styles.consent}>
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={(e) => setConsent(e.target.checked)}
+          />
+          <span>
+            Email me my read and save it under my nickname. The conversation I
+            pasted is never stored.
+          </span>
+        </label>
+        <button
+          className={styles.primary}
+          style={{ marginTop: 12 }}
+          disabled={!ready}
+          onClick={onUnlock}
+        >
+          Unlock my read
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function ReadScreen({
   name,
   status,
   read,
   error,
+  emailed,
   onRetry,
 }: {
   name: string;
   status: Status;
   read: Read | null;
   error: string;
+  emailed: boolean;
   onRetry: () => void;
 }) {
   if (status === "loading" || status === "idle") {
@@ -594,6 +687,12 @@ function ReadScreen({
         <span className={styles.pill}>{read.status_tag}</span>
         <span className={styles.pill}>Free read</span>
       </div>
+
+      <p className={styles.subtext} style={{ marginTop: -4 }}>
+        {emailed
+          ? "Saved, and a copy is on its way to your inbox."
+          : "Saved. We couldn’t email it just now, but it’s here for you."}
+      </p>
 
       <div className={styles.bars}>
         {read.bars.map((b, i) => (

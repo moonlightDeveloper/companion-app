@@ -201,7 +201,7 @@ export default function Home() {
                 <b>&#10003;</b> Nickname only
               </span>
               <span>
-                <b>&#10003;</b> No account to start
+                <b>&#10003;</b> Free &mdash; add your email to get your read
               </span>
             </div>
           </div>
@@ -634,7 +634,7 @@ export default function Home() {
             <Feat
               icon="&#128274;"
               title="Private, nickname only"
-              body="Each story is yours, under a nickname. No account needed to get your first read."
+              body="Each story is yours, under a nickname. Add your email to get your read — we email it and save it, never the conversation."
             />
           </div>
         </div>
@@ -670,7 +670,7 @@ export default function Home() {
                   <i>&#10003;</i> Explain their last message
                 </li>
                 <li>
-                  <i>&#10003;</i> Nickname-only privacy, no account
+                  <i>&#10003;</i> Nickname-only privacy &mdash; just your email to get the read
                 </li>
               </ul>
               <Link

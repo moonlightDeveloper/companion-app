@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import type { Intake } from "@/types";
 import { analyze, AnalyzeError } from "@/lib/analyze";
+import { saveRead } from "@/lib/db";
+import { sendReadEmail } from "@/lib/email";
 
 export const runtime = "nodejs";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(request: Request) {
   let body: unknown;
@@ -12,7 +16,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const intake = coerceIntake(body);
+  const b = (typeof body === "object" && body !== null ? body : {}) as Record<
+    string,
+    unknown
+  >;
+
+  // Gate: a valid email + ticked consent is required before we read anything.
+  const email = typeof b.email === "string" ? b.email.trim() : "";
+  if (!EMAIL_RE.test(email)) {
+    return NextResponse.json(
+      { error: "Please enter a valid email address." },
+      { status: 400 },
+    );
+  }
+  if (b.consent !== true) {
+    return NextResponse.json(
+      { error: "Please tick consent so we can email and save your read." },
+      { status: 400 },
+    );
+  }
+
+  const intake = coerceIntake(b);
   if (!intake.conversation.trim()) {
     return NextResponse.json(
       { error: "Please paste at least a few lines of the conversation." },
@@ -20,9 +44,9 @@ export async function POST(request: Request) {
     );
   }
 
+  let read;
   try {
-    const read = await analyze(intake);
-    return NextResponse.json(read);
+    read = await analyze(intake);
   } catch (err) {
     if (err instanceof AnalyzeError && err.message === "Missing ANTHROPIC_API_KEY") {
       console.error("ANTHROPIC_API_KEY is not configured");
@@ -37,13 +61,28 @@ export async function POST(request: Request) {
       { status: 502 },
     );
   }
+
+  // Save the read (nickname + email + result only — never the conversation).
+  // The save must succeed; we still return the read so the user sees it.
+  try {
+    await saveRead({ nickname: intake.name || "this person", email, result: read });
+  } catch (err) {
+    console.error("saveRead failed:", err);
+  }
+
+  // Email is non-blocking: a mail failure must never look like a read failure.
+  let emailed = false;
+  try {
+    await sendReadEmail({ to: email, nickname: intake.name || "this person", read });
+    emailed = true;
+  } catch (err) {
+    console.error("sendReadEmail failed:", err);
+  }
+
+  return NextResponse.json({ ...read, emailed });
 }
 
-function coerceIntake(body: unknown): Intake {
-  const b = (typeof body === "object" && body !== null ? body : {}) as Record<
-    string,
-    unknown
-  >;
+function coerceIntake(b: Record<string, unknown>): Intake {
   const str = (v: unknown) => (typeof v === "string" ? v : "");
   return {
     name: str(b.name),
