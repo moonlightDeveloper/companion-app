@@ -1,14 +1,16 @@
 #!/bin/sh
 # Enforce: type(TICKET): subject   e.g. feat(CMP-12): add live read
+# The (TICKET) is optional for quick fixes:  fix: typo in heading
 msg_file="$1"
 first_line="$(head -n1 "$msg_file")"
 
-pattern='^(feat|fix|chore|docs|refactor|test|style|perf|build|ci)\([A-Z][A-Z0-9]+-[0-9]+\): .+'
+pattern='^(feat|fix|chore|docs|refactor|test|style|perf|build|ci)(\([A-Z][A-Z0-9]+-[0-9]+\))?: .+'
 
 if ! printf '%s' "$first_line" | grep -Eq "$pattern"; then
   echo ""
   echo "✗ Commit message must look like:"
-  echo "    feat(CMP-12): short title"
+  echo "    feat(CMP-12): short title   (with a Jira ticket)"
+  echo "    fix: short title            (quick fix, no ticket)"
   echo ""
   echo "  Got: $first_line"
   echo ""
