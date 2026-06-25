@@ -187,14 +187,11 @@
   overflow: hidden;
 }
 .heroPhoto {
+  position: relative;
   width: 100%;
   height: 230px;
   background: linear-gradient(135deg, var(--soft), var(--soft2));
-  display: grid;
-  place-items: center;
-  color: var(--accent2);
-  font-weight: 700;
-  font-size: 13px;
+  overflow: hidden;
 }
 .mock {
   padding: 16px 17px;
@@ -401,6 +398,7 @@
   line-height: 1.55;
 }
 .imgbox {
+  position: relative;
   border-radius: 22px;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -597,9 +595,11 @@
   overflow: hidden;
 }
 .pcardImg {
+  position: relative;
   width: 100%;
   height: 150px;
   background: linear-gradient(135deg, var(--soft), var(--soft2));
+  overflow: hidden;
 }
 .pcap {
   padding: 15px;
