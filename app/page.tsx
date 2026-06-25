@@ -210,10 +210,11 @@ export default function Home() {
               <Image
                 src="/images/hero.jpg"
                 alt="Looking at a phone, deciding what a confusing message really means"
-                fill
+                width={2033}
+                height={2033}
                 priority
                 sizes="(max-width: 880px) 100vw, 480px"
-                style={{ objectFit: "cover" }}
+                className={styles.photo}
               />
             </div>
             <div className={styles.mock}>
@@ -359,9 +360,10 @@ export default function Home() {
               <Image
                 src="/images/problem.jpg"
                 alt="Person looking at their phone, unsure how to read a reply"
-                fill
+                width={2033}
+                height={2033}
                 sizes="(max-width: 880px) 100vw, 420px"
-                style={{ objectFit: "cover" }}
+                className={styles.photo}
               />
             </div>
           </div>
@@ -889,9 +891,10 @@ function Pattern({
         <Image
           src={img}
           alt={title}
-          fill
+          width={2033}
+          height={2033}
           sizes="(max-width: 880px) 100vw, 260px"
-          style={{ objectFit: "cover" }}
+          className={styles.photo}
         />
       </div>
       <div className={styles.pcap}>
