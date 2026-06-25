@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Intake, Read } from "@/types";
+import type { Intake, Read, TranscriptMessage } from "@/types";
 import styles from "./story.module.css";
 
 type Screen =
@@ -469,6 +469,8 @@ function Reflection({ name, onNext }: { name: string; onNext: () => void }) {
   );
 }
 
+type Mode = "choose" | "text" | "shots";
+
 function Paste({
   name,
   value,
@@ -479,7 +481,8 @@ function Paste({
   onContinue: (v: string) => void;
 }) {
   const { display, done } = useTypewriter("Show me the conversation.");
-  const [v, setV] = useState(value);
+  const [mode, setMode] = useState<Mode>(value.trim() ? "text" : "choose");
+
   return (
     <section className={styles.screen}>
       <div className={styles.stepHead}>
@@ -489,11 +492,51 @@ function Paste({
         </div>
         {done && (
           <p className={styles.subtext}>
-            Paste only what matters. Screenshots can come later. Names stay
-            private.
+            {mode === "choose"
+              ? "Paste the part that matters, or upload screenshots. Names stay private."
+              : "Names stay private — only “You” and the nickname are kept."}
           </p>
         )}
       </div>
+
+      {mode === "choose" && (
+        <div className={styles.options}>
+          <button className={styles.option} onClick={() => setMode("text")}>
+            <span>✍️ Paste the text</span>
+          </button>
+          <button className={styles.option} onClick={() => setMode("shots")}>
+            <span>🖼️ Upload screenshots</span>
+          </button>
+        </div>
+      )}
+
+      {mode === "text" && (
+        <PasteText name={name} value={value} onContinue={onContinue} />
+      )}
+
+      {mode === "shots" && (
+        <PasteShots
+          name={name}
+          onBack={() => setMode("choose")}
+          onConfirm={onContinue}
+        />
+      )}
+    </section>
+  );
+}
+
+function PasteText({
+  name,
+  value,
+  onContinue,
+}: {
+  name: string;
+  value: string;
+  onContinue: (v: string) => void;
+}) {
+  const [v, setV] = useState(value);
+  return (
+    <>
       <textarea
         className={styles.textarea}
         placeholder={
@@ -507,8 +550,291 @@ function Paste({
           Continue {name}&rsquo;s story
         </button>
       </div>
-    </section>
+    </>
   );
+}
+
+type ShotImage = { id: string; dataUrl: string; media_type: string; data: string };
+type ShotStage = "pick" | "extracting" | "review";
+
+const MAX_IMAGES = 6;
+
+function PasteShots({
+  name,
+  onBack,
+  onConfirm,
+}: {
+  name: string;
+  onBack: () => void;
+  onConfirm: (text: string) => void;
+}) {
+  const [images, setImages] = useState<ShotImage[]>([]);
+  const [stage, setStage] = useState<ShotStage>("pick");
+  const [error, setError] = useState("");
+  const [messages, setMessages] = useState<TranscriptMessage[]>([]);
+  const [drag, setDrag] = useState<number | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const addFiles = useCallback(async (files: FileList | null) => {
+    if (!files) return;
+    setError("");
+    const room = MAX_IMAGES - images.length;
+    const picked = Array.from(files).slice(0, Math.max(0, room));
+    const converted = (await Promise.all(picked.map(downscaleToBase64))).filter(
+      (x): x is ShotImage => x !== null,
+    );
+    if (converted.length < picked.length) {
+      setError("Some files were skipped — images only.");
+    }
+    setImages((prev) => [...prev, ...converted]);
+  }, [images.length]);
+
+  const move = (from: number, to: number) => {
+    setImages((prev) => {
+      if (to < 0 || to >= prev.length) return prev;
+      const next = [...prev];
+      const [it] = next.splice(from, 1);
+      next.splice(to, 0, it);
+      return next;
+    });
+  };
+
+  const extract = useCallback(async () => {
+    setStage("extracting");
+    setError("");
+    try {
+      const res = await fetch("/api/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nickname: name,
+          images: images.map((i) => ({ media_type: i.media_type, data: i.data })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Couldn't read those.");
+      setMessages(data.messages as TranscriptMessage[]);
+      setStage("review");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't read those.");
+      setStage("pick");
+    }
+  }, [images, name]);
+
+  if (stage === "extracting") {
+    return (
+      <>
+        <div className={styles.stepHead}>
+          <TypingDots />
+        </div>
+        <p className={styles.subtext}>
+          Reading your screenshots and stitching them in order&hellip;
+        </p>
+      </>
+    );
+  }
+
+  if (stage === "review") {
+    return (
+      <TranscriptReview
+        name={name}
+        messages={messages}
+        setMessages={setMessages}
+        onRedo={() => setStage("pick")}
+        onConfirm={() => onConfirm(messages.map((m) => `${m.speaker}: ${m.text}`).join("\n"))}
+      />
+    );
+  }
+
+  return (
+    <>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        onChange={(e) => addFiles(e.target.files)}
+      />
+
+      {images.length === 0 ? (
+        <button className={styles.dropzone} onClick={() => fileRef.current?.click()}>
+          <b>Add screenshots</b>
+          <span>Up to {MAX_IMAGES} images · earliest first</span>
+        </button>
+      ) : (
+        <>
+          {images.length > 1 && (
+            <p className={styles.subtext} style={{ marginBottom: 8 }}>
+              Drag to put them in order — earliest conversation first.
+            </p>
+          )}
+          <div className={styles.thumbs}>
+            {images.map((img, i) => (
+              <div
+                key={img.id}
+                className={styles.thumb}
+                draggable
+                onDragStart={() => setDrag(i)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={() => {
+                  if (drag !== null) move(drag, i);
+                  setDrag(null);
+                }}
+              >
+                <span className={styles.thumbBadge}>{i + 1}</span>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={img.dataUrl} alt={`Screenshot ${i + 1}`} />
+                <div className={styles.thumbCtl}>
+                  {images.length > 1 && (
+                    <>
+                      <button onClick={() => move(i, i - 1)} aria-label="Move earlier">↑</button>
+                      <button onClick={() => move(i, i + 1)} aria-label="Move later">↓</button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => setImages((p) => p.filter((x) => x.id !== img.id))}
+                    aria-label="Remove"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            ))}
+            {images.length < MAX_IMAGES && (
+              <button className={styles.thumbAdd} onClick={() => fileRef.current?.click()}>
+                +
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      {error && (
+        <p className={styles.subtext} style={{ color: "var(--red)" }}>{error}</p>
+      )}
+
+      <div className={styles.footerActions}>
+        <button
+          className={styles.primary}
+          disabled={images.length === 0}
+          onClick={extract}
+        >
+          Extract conversation
+        </button>
+        <button
+          className={styles.ghost}
+          style={{ display: "block", width: "100%", marginTop: 8 }}
+          onClick={onBack}
+        >
+          Paste text instead
+        </button>
+      </div>
+    </>
+  );
+}
+
+function TranscriptReview({
+  name,
+  messages,
+  setMessages,
+  onRedo,
+  onConfirm,
+}: {
+  name: string;
+  messages: TranscriptMessage[];
+  setMessages: (m: TranscriptMessage[]) => void;
+  onRedo: () => void;
+  onConfirm: () => void;
+}) {
+  const update = (i: number, patch: Partial<TranscriptMessage>) =>
+    setMessages(messages.map((m, j) => (j === i ? { ...m, ...patch } : m)));
+  const remove = (i: number) => setMessages(messages.filter((_, j) => j !== i));
+
+  return (
+    <>
+      <p className={styles.subtext} style={{ marginBottom: 10 }}>
+        Quick check — fix any wrong speaker or wording, then continue.
+      </p>
+      <div className={styles.reviewList}>
+        {messages.map((m, i) => (
+          <div key={i} className={styles.reviewLine}>
+            <button
+              className={styles.speakerToggle}
+              onClick={() => update(i, { speaker: m.speaker === "You" ? name : "You" })}
+            >
+              {m.speaker === "You" ? "You" : name}
+            </button>
+            <input
+              className={styles.reviewInput}
+              value={m.text}
+              onChange={(e) => update(i, { text: e.target.value })}
+            />
+            <button className={styles.reviewDel} aria-label="Delete line" onClick={() => remove(i)}>
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className={styles.footerActions}>
+        <button
+          className={styles.primary}
+          disabled={messages.length === 0}
+          onClick={onConfirm}
+        >
+          Use this conversation
+        </button>
+        <button
+          className={styles.ghost}
+          style={{ display: "block", width: "100%", marginTop: 8 }}
+          onClick={onRedo}
+        >
+          Re-do the screenshots
+        </button>
+      </div>
+    </>
+  );
+}
+
+/** Read a file, downscale it, and return base64 JPEG. Images only. */
+async function downscaleToBase64(file: File): Promise<ShotImage | null> {
+  if (!file.type.startsWith("image/")) return null;
+  try {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result as string);
+      fr.onerror = () => reject(new Error("read failed"));
+      fr.readAsDataURL(file);
+    });
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new window.Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("decode failed"));
+      el.src = dataUrl;
+    });
+    const max = 1600;
+    let { width, height } = img;
+    if (Math.max(width, height) > max) {
+      const s = max / Math.max(width, height);
+      width = Math.round(width * s);
+      height = Math.round(height * s);
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, width, height);
+    const out = canvas.toDataURL("image/jpeg", 0.85);
+    return {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      dataUrl: out,
+      media_type: "image/jpeg",
+      data: out.split(",")[1] ?? "",
+    };
+  } catch {
+    return null;
+  }
 }
 
 function EmailScreen({
