@@ -1,0 +1,16 @@
+#!/bin/sh
+# Enforce: type(TICKET): subject   e.g. feat(CMP-12): add live read
+msg_file="$1"
+first_line="$(head -n1 "$msg_file")"
+
+pattern='^(feat|fix|chore|docs|refactor|test|style|perf|build|ci)\([A-Z][A-Z0-9]+-[0-9]+\): .+'
+
+if ! printf '%s' "$first_line" | grep -Eq "$pattern"; then
+  echo ""
+  echo "✗ Commit message must look like:"
+  echo "    feat(CMP-12): short title"
+  echo ""
+  echo "  Got: $first_line"
+  echo ""
+  exit 1
+fi
