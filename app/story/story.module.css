@@ -309,6 +309,25 @@
 .textarea:focus {
   border-color: var(--accent);
 }
+.consent {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 14px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted, #7a6b66);
+  cursor: pointer;
+}
+.consent input {
+  margin-top: 2px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+.primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .spacer {
   flex: 1;
 }
