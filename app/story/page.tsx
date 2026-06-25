@@ -2,6 +2,24 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  rectSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type { Intake, Read, TranscriptMessage } from "@/types";
 import styles from "./story.module.css";
 
@@ -572,8 +590,15 @@ function PasteShots({
   const [stage, setStage] = useState<ShotStage>("pick");
   const [error, setError] = useState("");
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
-  const [drag, setDrag] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Pointer + touch + keyboard reordering. A small activation distance lets the
+  // remove button still register taps without starting a drag.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   const addFiles = useCallback(async (files: FileList | null) => {
     if (!files) return;
@@ -589,13 +614,13 @@ function PasteShots({
     setImages((prev) => [...prev, ...converted]);
   }, [images.length]);
 
-  const move = (from: number, to: number) => {
+  const onDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
     setImages((prev) => {
-      if (to < 0 || to >= prev.length) return prev;
-      const next = [...prev];
-      const [it] = next.splice(from, 1);
-      next.splice(to, 0, it);
-      return next;
+      const from = prev.findIndex((x) => x.id === active.id);
+      const to = prev.findIndex((x) => x.id === over.id);
+      return from === -1 || to === -1 ? prev : arrayMove(prev, from, to);
     });
   };
 
@@ -669,44 +694,38 @@ function PasteShots({
               Drag to put them in order — earliest conversation first.
             </p>
           )}
-          <div className={styles.thumbs}>
-            {images.map((img, i) => (
-              <div
-                key={img.id}
-                className={styles.thumb}
-                draggable
-                onDragStart={() => setDrag(i)}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={() => {
-                  if (drag !== null) move(drag, i);
-                  setDrag(null);
-                }}
-              >
-                <span className={styles.thumbBadge}>{i + 1}</span>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={img.dataUrl} alt={`Screenshot ${i + 1}`} />
-                <div className={styles.thumbCtl}>
-                  {images.length > 1 && (
-                    <>
-                      <button onClick={() => move(i, i - 1)} aria-label="Move earlier">↑</button>
-                      <button onClick={() => move(i, i + 1)} aria-label="Move later">↓</button>
-                    </>
-                  )}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={onDragEnd}
+          >
+            <SortableContext
+              items={images.map((i) => i.id)}
+              strategy={rectSortingStrategy}
+            >
+              <div className={styles.thumbs}>
+                {images.map((img, i) => (
+                  <SortableThumb
+                    key={img.id}
+                    img={img}
+                    index={i}
+                    canReorder={images.length > 1}
+                    onRemove={() =>
+                      setImages((p) => p.filter((x) => x.id !== img.id))
+                    }
+                  />
+                ))}
+                {images.length < MAX_IMAGES && (
                   <button
-                    onClick={() => setImages((p) => p.filter((x) => x.id !== img.id))}
-                    aria-label="Remove"
+                    className={styles.thumbAdd}
+                    onClick={() => fileRef.current?.click()}
                   >
-                    ✕
+                    +
                   </button>
-                </div>
+                )}
               </div>
-            ))}
-            {images.length < MAX_IMAGES && (
-              <button className={styles.thumbAdd} onClick={() => fileRef.current?.click()}>
-                +
-              </button>
-            )}
-          </div>
+            </SortableContext>
+          </DndContext>
         </>
       )}
 
@@ -731,6 +750,50 @@ function PasteShots({
         </button>
       </div>
     </>
+  );
+}
+
+function SortableThumb({
+  img,
+  index,
+  canReorder,
+  onRemove,
+}: {
+  img: ShotImage;
+  index: number;
+  canReorder: boolean;
+  onRemove: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: img.id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={styles.thumb}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+        cursor: canReorder ? "grab" : "default",
+        touchAction: "none",
+      }}
+      {...attributes}
+      {...(canReorder ? listeners : {})}
+    >
+      <span className={styles.thumbBadge}>{index + 1}</span>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={img.dataUrl} alt={`Screenshot ${index + 1}`} draggable={false} />
+      <div className={styles.thumbCtl}>
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={onRemove}
+          aria-label="Remove"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
   );
 }
 
