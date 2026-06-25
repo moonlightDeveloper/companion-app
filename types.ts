@@ -44,6 +44,19 @@ export interface Read {
   safety: ReadSafety;
 }
 
+/** One attributed line of a conversation extracted from screenshots. */
+export interface TranscriptMessage {
+  /** "You" for the user, or the chosen nickname for the other person. */
+  speaker: string;
+  text: string;
+}
+
+/** The ordered transcript returned by /api/extract. */
+export interface Transcript {
+  messages: TranscriptMessage[];
+  notes?: string;
+}
+
 /** The intake answers collected by the guided story flow. */
 export interface Intake {
   name: string;
