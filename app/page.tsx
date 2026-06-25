@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import styles from "./page.module.css";
@@ -205,7 +206,17 @@ export default function Home() {
             </div>
           </div>
           <div className={`${styles.heroCard} ${styles.reveal}`}>
-            <div className={styles.heroPhoto}>your read, at a glance</div>
+            <div className={styles.heroPhoto}>
+              <Image
+                src="/images/hero.jpg"
+                alt="Looking at a phone, deciding what a confusing message really means"
+                width={2033}
+                height={2033}
+                priority
+                sizes="(max-width: 880px) 100vw, 480px"
+                className={styles.photo}
+              />
+            </div>
             <div className={styles.mock}>
               <div className={styles.lbl}>
                 &#9788; Your read &middot; behavior, not feelings
@@ -345,7 +356,16 @@ export default function Home() {
                 body="Ten opinions, none based on the actual messages. One calm read of the behavior beats the group chat."
               />
             </div>
-            <div className={`${styles.imgbox} ${styles.reveal}`} />
+            <div className={`${styles.imgbox} ${styles.reveal}`}>
+              <Image
+                src="/images/problem.jpg"
+                alt="Person looking at their phone, unsure how to read a reply"
+                width={2033}
+                height={2033}
+                sizes="(max-width: 880px) 100vw, 420px"
+                className={styles.photo}
+              />
+            </div>
           </div>
         </div>
       </section>
@@ -554,18 +574,22 @@ export default function Home() {
           </p>
           <div className={styles.pgrid}>
             <Pattern
+              img="/images/pattern-effort.jpg"
               title="Mismatched effort"
               body="One person invests; the other keeps it minimal or inconsistent."
             />
             <Pattern
+              img="/images/pattern-shifting.jpg"
               title="The story keeps shifting"
               body="Details change, answers stay vague, the timeline doesn't match last week."
             />
             <Pattern
+              img="/images/problem.jpg"
               title="Available until they're not"
               body="Warmth without real availability — vague excuses, interrupted plans."
             />
             <Pattern
+              img="/images/pattern-saysdoes.jpg"
               title="Says one thing, does another"
               body="When their words, behavior, and plans all point different directions."
             />
@@ -852,10 +876,27 @@ function Step({ n, title, body }: { n: string; title: string; body: string }) {
   );
 }
 
-function Pattern({ title, body }: { title: string; body: string }) {
+function Pattern({
+  img,
+  title,
+  body,
+}: {
+  img: string;
+  title: string;
+  body: string;
+}) {
   return (
     <div className={`${styles.pcard} ${styles.reveal}`}>
-      <div className={styles.pcardImg} />
+      <div className={styles.pcardImg}>
+        <Image
+          src={img}
+          alt={title}
+          width={2033}
+          height={2033}
+          sizes="(max-width: 880px) 100vw, 260px"
+          className={styles.photo}
+        />
+      </div>
       <div className={styles.pcap}>
         <span className={styles.tag}>Common pattern</span>
         <h3>{title}</h3>
