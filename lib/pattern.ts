@@ -1,7 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Read } from "@/types";
-
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+import { modelFor } from "./models";
 
 export class PatternError extends Error {}
 
@@ -38,7 +37,7 @@ export async function synthesizePattern(reads: Read[], nickname: string): Promis
   let text: string;
   try {
     const response = await client.messages.create({
-      model: process.env.MODEL || DEFAULT_MODEL,
+      model: modelFor("pattern"),
       max_tokens: 200,
       system: SYSTEM,
       messages: [

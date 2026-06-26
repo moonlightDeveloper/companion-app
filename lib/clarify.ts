@@ -1,6 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+import { modelFor } from "./models";
 
 export class ClarifyError extends Error {}
 
@@ -42,7 +41,7 @@ export async function clarifyQuestions(
   let text: string;
   try {
     const response = await client.messages.create({
-      model: process.env.MODEL || DEFAULT_MODEL,
+      model: modelFor("clarify"),
       max_tokens: 500,
       system: SYSTEM,
       messages: [

@@ -1,7 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ReplyDraft } from "@/types";
-
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+import { modelFor } from "./models";
 
 /** Thrown when the model call or JSON parsing fails. */
 export class ReplyError extends Error {}
@@ -37,7 +36,7 @@ export async function draftReplies(params: {
   let text: string;
   try {
     const response = await client.messages.create({
-      model: process.env.MODEL || DEFAULT_MODEL,
+      model: modelFor("reply"),
       max_tokens: 1024,
       system: systemPrompt(name),
       messages: [
