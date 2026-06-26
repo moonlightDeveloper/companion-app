@@ -18,6 +18,16 @@ export default function Home() {
   const [typed, setTyped] = useState("");
   const [count, setCount] = useState(0);
 
+  // FLAG-22: a recognized device skips the landing page and goes into the app.
+  useEffect(() => {
+    fetch("/api/me")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.signedIn || d?.hasSoftToken) window.location.replace("/story");
+      })
+      .catch(() => {});
+  }, []);
+
   // Reveal-on-scroll + animated bar fills.
   useEffect(() => {
     const root = rootRef.current;

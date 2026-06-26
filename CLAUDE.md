@@ -36,14 +36,15 @@ per-person history of those reads.
 `index.html` and `app.html` at the root are the design source of truth —
 preserve them; port from them, don't delete them.
 
-**What exists today (shipped, FLAG-1 → FLAG-21):**
+**What exists today (shipped, FLAG-1 → FLAG-22):**
 
 - The guided `/story` flow: one-question-at-a-time intake → paste or upload
   screenshots (Claude vision → ordered transcript) → a live behaviour read.
 - Email-gated read with an optional emailed copy (Resend) + delete-my-data.
-- Passwordless sign-in: magic-link (`/signin`) **and** inline OTP code inside
-  the flow (FLAG-13) — the in-flow email step signs you in, so the read attaches
-  to your account; already-signed-in users skip the step.
+- Identity: the in-flow email step is **email + consent only** (no code, no wall —
+  the first read always shows). On report completion a **soft identity** is minted
+  (FLAG-22); magic-link (`/signin`) is the optional **verified** cross-device
+  upgrade. (FLAG-13's inline-OTP gate was removed by FLAG-22.)
 - Signed-in persistence: `users → persons → reports` in Postgres; raw
   conversations on-device only (IndexedDB).
 - Pick-or-create entry and reply assistance.
@@ -66,25 +67,18 @@ preserve them; port from them, don't delete them.
 - Confidence-gated transcript check (FLAG-20, §2.13): the blanket review wall is
   replaced by a check screen only when extraction is shaky, plus an always-on
   "fix the messages" backstop with the read.
+- Soft identity (FLAG-22, §2.8): a returning user on the same browser is
+  recognized (soft token + matching email) and routed into the app; the first
+  read stays anonymous and code-free (the OTP gate is gone). Cross-device stays
+  the optional magic-link upgrade.
 
 **Planned (designed, not yet built):**
 
-- Soft identity (§2.8) — recognize a returning user on their own browser
-  without forcing an account or a code, so the per-person features reach real
-  users without first-read friction. This supersedes FLAG-13's OTP gate.
 - Language & cultural-context handling (§2.9) — a prompt/UX policy, mostly
   unbuilt.
 
 **Known gaps (important):**
 
-- First-read friction vs. frictionless-anonymous ideal. FLAG-13 wired sign-in
-  into the flow via an inline OTP code, which fixes recognition — but it gates
-  the first read behind a code, which sits against §2.5/§2.8's "free anonymous
-  first read." §2.8 (soft identity) is the designed fix: keep the first read
-  anonymous and code-free, recognize the returning user via a device token, and
-  keep magic-link as the optional cross-device upgrade. Until §2.8 lands, the
-  OTP gate stands. Do not "solve" recognition by hard-gating the read behind
-  auth (that breaks §2.5).
 - Email is sandboxed (Resend). Codes/reads only deliver to the Resend account
   owner's address until the sending domain is verified — real-user testing is
   blocked on this DNS step.
@@ -146,7 +140,7 @@ The engineering reference behind the "saved people / private history / replies"
 work. Shipped: FLAG-8 (magic-link sign-in), FLAG-9 (saved people), FLAG-10
 (on-device conversations), FLAG-11 (pick-or-create), FLAG-12 (reply help),
 FLAG-13 (inline OTP sign-in), FLAG-14 (per-person history & pattern over time),
-FLAG-15 (storage-shape cleanup), FLAG-16 (evidence scrub), FLAG-17 (voice, §2.10), FLAG-18 (pre-read clarification, §2.11), FLAG-19 (background read, §2.12), FLAG-20 (confidence-gated check + backstop, §2.13), FLAG-21 (input validation + voice, §2.14). Designed, not yet
+FLAG-15 (storage-shape cleanup), FLAG-16 (evidence scrub), FLAG-17 (voice, §2.10), FLAG-18 (pre-read clarification, §2.11), FLAG-19 (background read, §2.12), FLAG-20 (confidence-gated check + backstop, §2.13), FLAG-21 (input validation + voice, §2.14), FLAG-22 (soft identity, §2.8). Designed, not yet
 built: soft identity (§2.8), language & cultural context (§2.9).
 
 **Identity (decided):** passwordless email magic-link / OTP via Resend. User key
@@ -267,7 +261,7 @@ collision suggest a non-identifying differentiator (e.g. "Alex – Hinge", never
 real PII). Keep the roster lightweight ("your saved stories"), never a dossier
 of the other people.
 
-### §2.8 Soft identity (designed — not yet built)
+### §2.8 Soft identity (shipped — FLAG-22)
 
 Resolves the first-read-friction gap without forcing an account or walling the
 read. Three tiers: anonymous → soft (device-recognized) → verified (magic-link,

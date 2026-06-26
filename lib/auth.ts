@@ -14,9 +14,12 @@ import crypto from "crypto";
  */
 
 export const SESSION_COOKIE = "companion_session";
+export const SOFT_COOKIE = "companion_soft";
 const MAGIC_TTL_MS = 15 * 60 * 1000; // 15 minutes
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const SOFT_TTL_MS = 365 * 24 * 60 * 60 * 1000; // 1 year (persistent device identity)
 export const SESSION_MAX_AGE = Math.floor(SESSION_TTL_MS / 1000);
+export const SOFT_MAX_AGE = Math.floor(SOFT_TTL_MS / 1000);
 
 export class AuthError extends Error {}
 
@@ -82,6 +85,26 @@ export async function getSession(): Promise<Session | null> {
 /** Current signed-in userId, or null. */
 export async function getUserId(): Promise<string | null> {
   return (await getSession())?.userId ?? null;
+}
+
+/**
+ * Soft-identity token (FLAG-22): a persistent, httpOnly cookie carrying the
+ * soft-user id. It identifies WHICH soft-user this device belongs to — it is
+ * NEVER sufficient alone to unlock the roster; the user must also submit a
+ * matching email (see /api/auth/recognize).
+ */
+export function createSoftValue(userId: string): string {
+  return sign({ t: "soft", uid: userId, exp: Date.now() + SOFT_TTL_MS });
+}
+
+/** The soft-user id from the soft cookie, or null. (Candidate only — not auth.) */
+export async function getSoftUserId(): Promise<string | null> {
+  const raw = (await cookies()).get(SOFT_COOKIE)?.value;
+  if (!raw) return null;
+  const p = unsign(raw);
+  if (!p || p.t !== "soft" || typeof p.uid !== "string") return null;
+  if (typeof p.exp !== "number" || p.exp < Date.now()) return null;
+  return p.uid;
 }
 
 /** Deterministic hash of a one-time code, scoped to the email. */
