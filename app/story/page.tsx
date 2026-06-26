@@ -133,6 +133,7 @@ const emptyIntake: Intake = {
 };
 
 type Status = "idle" | "loading" | "error" | "done";
+type ExtractStatus = "idle" | "running" | "done" | "failed";
 
 type RosterPerson = { id: string; nickname: string; differentiator: string | null };
 type ClientReport = { id: string; result: Read; created_at: string };
@@ -163,6 +164,15 @@ export default function Story() {
   const [pattern, setPattern] = useState<string | null>(null);
   const [selectedReport, setSelectedReport] = useState<ClientReport | null>(null);
   const [fromPerson, setFromPerson] = useState(false);
+  // FLAG-23: background upload+extraction. extractStatus drives the calm beat and
+  // the failure override; reviewMessages holds a needsCheck verification until the
+  // transcript is actually consumed (at clarify).
+  const [extractStatus, setExtractStatus] = useState<ExtractStatus>("idle");
+  const [extractError, setExtractError] = useState("");
+  const [reviewMessages, setReviewMessages] = useState<TranscriptMessage[] | null>(null);
+  const [pasteTextMode, setPasteTextMode] = useState(false);
+  const extractAbortRef = useRef<AbortController | null>(null);
+  const resumeToRef = useRef<Screen | null>(null);
 
   const name = answers.name.trim() || "this person";
 
@@ -206,6 +216,65 @@ export default function Story() {
     promise.catch(() => {}); // produceRead handles failures; avoid unhandled rejection
     bgReadRef.current = { conv: conversation, promise };
   }, []);
+
+  // FLAG-23: extract the screenshots in the BACKGROUND, while the user answers
+  // intake. Mirrors the FLAG-21 follow-up (25s abort + specific copy) but sets
+  // state instead of advancing — the flow has already moved on. On success it
+  // chains the Safe-B-lite background read; needsCheck is held for clarify-time
+  // (a verification, not a failure); hard failures flip status to "failed" so the
+  // global override surfaces them wherever the user is.
+  const startBgExtract = useCallback(
+    (images: ShotImage[], nickname: string, intake: Intake) => {
+      extractAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      extractAbortRef.current = ctrl;
+      setExtractStatus("running");
+      setExtractError("");
+      setReviewMessages(null);
+      const t = window.setTimeout(() => ctrl.abort(), 25000);
+      (async () => {
+        try {
+          const res = await fetch("/api/extract", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              nickname,
+              images: images.map((i) => ({ media_type: i.media_type, data: i.data })),
+            }),
+            signal: ctrl.signal,
+          });
+          const data = await res.json();
+          // A newer upload superseded this one — drop the stale result.
+          if (extractAbortRef.current !== ctrl) return;
+          if (!res.ok) throw new Error(data?.error || "Couldn't read those.");
+          const msgs = data.messages as TranscriptMessage[];
+          if (data.needsCheck) {
+            // Verification waits until the transcript is consumed (clarify).
+            setReviewMessages(msgs);
+            setExtractStatus("done");
+          } else {
+            const text = msgs.map((m) => `${m.speaker}: ${m.text}`).join("\n");
+            setAnswers((a) => ({ ...a, conversation: text }));
+            startBgRead(text, { ...intake, conversation: text });
+            setExtractStatus("done");
+          }
+        } catch (err) {
+          if (extractAbortRef.current !== ctrl) return;
+          const msg =
+            err instanceof DOMException && err.name === "AbortError"
+              ? "That took too long — try again, or paste the text instead."
+              : err instanceof Error
+                ? err.message
+                : "Couldn't read those — try again, or paste the text instead.";
+          setExtractError(msg);
+          setExtractStatus("failed");
+        } finally {
+          window.clearTimeout(t);
+        }
+      })();
+    },
+    [startBgRead],
+  );
 
   const produceRead = useCallback(async () => {
     setStatus("loading");
@@ -301,6 +370,11 @@ export default function Story() {
   // the read. Never blocks — any failure degrades to going to the read.
   useEffect(() => {
     if (screen !== "clarify") return;
+    // Wait for a ready transcript: extraction must be done (or never ran, for the
+    // paste-text path), no pending verification, and a conversation in hand.
+    if (extractStatus === "running" || extractStatus === "failed") return;
+    if (reviewMessages) return;
+    if (!answers.conversation) return;
     let cancelled = false;
     setClarifyLoading(true);
     setClarifyQs([]);
@@ -329,7 +403,7 @@ export default function Story() {
     return () => {
       cancelled = true;
     };
-  }, [screen, answers.conversation, name, go]);
+  }, [screen, answers.conversation, name, go, extractStatus, reviewMessages]);
 
   // Load the signed-in user's roster (empty if not signed in) for pick-or-create.
   useEffect(() => {
@@ -404,6 +478,28 @@ export default function Story() {
           <div className={styles.bar} style={{ width: `${progress}%` }} />
         </div>
         <main className={styles.main}>
+          {/* FLAG-23: a background extraction failure interrupts the flow wherever
+              the user is — including clarify / the "putting it together" beat. */}
+          {extractStatus === "failed" ? (
+            <ExtractFailure
+              error={extractError}
+              onReupload={() => {
+                resumeToRef.current = screen; // resume where they were
+                setExtractStatus("idle");
+                setExtractError("");
+                setPasteTextMode(false);
+                go("paste");
+              }}
+              onPaste={() => {
+                resumeToRef.current = screen;
+                setExtractStatus("idle");
+                setExtractError("");
+                setPasteTextMode(true);
+                go("paste");
+              }}
+            />
+          ) : (
+          <>
           {screen === "cover" && (
             <Cover onStart={() => go(roster.length ? "pick" : "name")} />
           )}
@@ -494,16 +590,32 @@ export default function Story() {
             <Paste
               name={name}
               value={answers.conversation}
-              onContinue={(v) => {
-                setAnswers((a) => ({ ...a, conversation: v }));
+              initialMode={pasteTextMode ? "text" : undefined}
+              onText={(v) => {
                 // New read → fresh save (don't update a previous report) + reset regens.
                 savedRef.current = {};
                 setRegenCount(0);
+                setExtractStatus("idle"); // paste-text: no extraction to wait on
+                setReviewMessages(null);
+                setAnswers((a) => ({ ...a, conversation: v }));
                 // Safe-B-lite: start generating the read now, in the background.
                 startBgRead(v, { ...answers, conversation: v });
-                // "New report" on a known person skips the rest of the context
-                // questions and the email step (already signed in).
-                go(fromPerson ? "clarify" : "met");
+                const target = resumeToRef.current ?? (fromPerson ? "clarify" : "met");
+                resumeToRef.current = null;
+                setPasteTextMode(false);
+                go(target);
+              }}
+              onImages={(imgs) => {
+                savedRef.current = {};
+                setRegenCount(0);
+                // Conversation is empty until extraction lands; clear any stale text.
+                setAnswers((a) => ({ ...a, conversation: "" }));
+                // FLAG-23: extract in the background and move into the questions now.
+                startBgExtract(imgs, name, { ...answers, conversation: "" });
+                const target = resumeToRef.current ?? (fromPerson ? "clarify" : "met");
+                resumeToRef.current = null;
+                setPasteTextMode(false);
+                go(target);
               }}
             />
           )}
@@ -531,7 +643,39 @@ export default function Story() {
           )}
 
           {screen === "clarify" &&
-            (clarifyLoading ? (
+            (extractStatus === "running" ? (
+              // Background extraction is still finishing — the calm Safe-B-lite beat.
+              <section className={styles.screen}>
+                <div className={styles.stepHead}>
+                  <TypingDots />
+                </div>
+                <p className={styles.subtext}>Putting it together&hellip;</p>
+              </section>
+            ) : reviewMessages ? (
+              // FLAG-20 verification, surfaced now that the transcript is consumed.
+              <section className={styles.screen}>
+                <TranscriptReview
+                  name={name}
+                  messages={reviewMessages}
+                  setMessages={(m) => setReviewMessages(m)}
+                  onRedo={() => {
+                    resumeToRef.current = "clarify";
+                    setReviewMessages(null);
+                    setExtractStatus("idle");
+                    setPasteTextMode(false);
+                    go("paste");
+                  }}
+                  onConfirm={() => {
+                    const text = reviewMessages
+                      .map((m) => `${m.speaker}: ${m.text}`)
+                      .join("\n");
+                    setAnswers((a) => ({ ...a, conversation: text }));
+                    startBgRead(text, { ...answers, conversation: text });
+                    setReviewMessages(null); // clears the gate → clarify fetch runs
+                  }}
+                />
+              </section>
+            ) : clarifyLoading ? (
               <section className={styles.screen}>
                 <div className={styles.stepHead}>
                   <TypingDots />
@@ -567,6 +711,8 @@ export default function Story() {
               }}
               onRetry={produceRead}
             />
+          )}
+          </>
           )}
         </main>
       </div>
@@ -832,19 +978,67 @@ function Reflection({ name, onNext }: { name: string; onNext: () => void }) {
   );
 }
 
+/**
+ * FLAG-23: a background extraction failed mid-flow. Surfaced wherever the user
+ * is (intake question, clarify, the beat) with the same specific FLAG-21 copy,
+ * §2.10 voice, and the retry/paste fallback — paste routes around a hung vision
+ * call. Intake answers are untouched, so recovery resumes intact.
+ */
+function ExtractFailure({
+  error,
+  onReupload,
+  onPaste,
+}: {
+  error: string;
+  onReupload: () => void;
+  onPaste: () => void;
+}) {
+  return (
+    <section className={styles.screen}>
+      <div className={styles.stepHead}>
+        <div className={styles.questionWrap}>
+          <h2 className={styles.question}>That didn&rsquo;t go through.</h2>
+        </div>
+      </div>
+      <div className={styles.uploadError} role="alert">
+        <span aria-hidden="true">⚠️</span>
+        <span>{error}</span>
+      </div>
+      <div className={styles.footerActions}>
+        <button className={styles.primary} onClick={onReupload}>
+          Re-upload screenshots
+        </button>
+        <button
+          className={styles.ghost}
+          style={{ display: "block", width: "100%", marginTop: 8 }}
+          onClick={onPaste}
+        >
+          Paste the text instead
+        </button>
+      </div>
+    </section>
+  );
+}
+
 type Mode = "choose" | "text" | "shots";
 
 function Paste({
   name,
   value,
-  onContinue,
+  initialMode,
+  onText,
+  onImages,
 }: {
   name: string;
   value: string;
-  onContinue: (v: string) => void;
+  initialMode?: Mode;
+  onText: (v: string) => void;
+  onImages: (images: ShotImage[]) => void;
 }) {
   const { display, done } = useTypewriter("Show me the conversation.");
-  const [mode, setMode] = useState<Mode>(value.trim() ? "text" : "choose");
+  const [mode, setMode] = useState<Mode>(
+    initialMode ?? (value.trim() ? "text" : "choose"),
+  );
 
   return (
     <section className={styles.screen}>
@@ -874,15 +1068,11 @@ function Paste({
       )}
 
       {mode === "text" && (
-        <PasteText name={name} value={value} onContinue={onContinue} />
+        <PasteText name={name} value={value} onContinue={onText} />
       )}
 
       {mode === "shots" && (
-        <PasteShots
-          name={name}
-          onBack={() => setMode("choose")}
-          onConfirm={onContinue}
-        />
+        <PasteShots onBack={() => setMode("choose")} onConfirm={onImages} />
       )}
     </section>
   );
@@ -918,23 +1108,17 @@ function PasteText({
 }
 
 type ShotImage = { id: string; dataUrl: string; media_type: string; data: string };
-type ShotStage = "pick" | "extracting" | "review";
-
 const MAX_IMAGES = 6;
 
 function PasteShots({
-  name,
   onBack,
   onConfirm,
 }: {
-  name: string;
   onBack: () => void;
-  onConfirm: (text: string) => void;
+  onConfirm: (images: ShotImage[]) => void;
 }) {
   const [images, setImages] = useState<ShotImage[]>([]);
-  const [stage, setStage] = useState<ShotStage>("pick");
   const [error, setError] = useState("");
-  const [messages, setMessages] = useState<TranscriptMessage[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Pointer + touch + keyboard reordering. A small activation distance lets the
@@ -954,27 +1138,28 @@ function PasteShots({
     // call. Specific, actionable message — never a generic "unsupported file".
     const ACCEPTED = ["image/png", "image/jpeg", "image/webp", "image/gif"];
     const MAX_BYTES = 20 * 1024 * 1024; // 20 MB original-file guard
-    const out: ShotImage[] = [];
-    let err = "";
-    for (const f of picked) {
-      const type = (f.type || "").toLowerCase();
-      if (!ACCEPTED.includes(type)) {
-        err = /heic|heif/i.test(type + " " + f.name)
-          ? "HEIC isn't supported — export it as JPG and try again."
-          : "That's not an image we can read — use a PNG or JPG screenshot.";
-        continue;
-      }
-      if (f.size > MAX_BYTES) {
-        err = "That file's too large — keep the original under 20 MB.";
-        continue;
-      }
-      const img = await downscaleToBase64(f);
-      if (!img) {
-        err = "Couldn't read that file — try another screenshot.";
-        continue;
-      }
-      out.push(img);
-    }
+    // FLAG-23 cut: validate + downscale concurrently (was a sequential for-await),
+    // preserving order. Per-file validation/errors are unchanged.
+    const results = await Promise.all(
+      picked.map(async (f): Promise<{ img?: ShotImage; err?: string }> => {
+        const type = (f.type || "").toLowerCase();
+        if (!ACCEPTED.includes(type)) {
+          return {
+            err: /heic|heif/i.test(type + " " + f.name)
+              ? "HEIC isn't supported — export it as JPG and try again."
+              : "That's not an image we can read — use a PNG or JPG screenshot.",
+          };
+        }
+        if (f.size > MAX_BYTES) {
+          return { err: "That file's too large — keep the original under 20 MB." };
+        }
+        const img = await downscaleToBase64(f);
+        if (!img) return { err: "Couldn't read that file — try another screenshot." };
+        return { img };
+      }),
+    );
+    const out = results.map((r) => r.img).filter((x): x is ShotImage => !!x);
+    const err = results.find((r) => r.err)?.err ?? "";
     if (err) setError(err);
     if (out.length) setImages((prev) => [...prev, ...out]);
   }, [images.length]);
@@ -988,74 +1173,6 @@ function PasteShots({
       return from === -1 || to === -1 ? prev : arrayMove(prev, from, to);
     });
   };
-
-  const extract = useCallback(async () => {
-    setStage("extracting");
-    setError("");
-    // Cap the vision call (matches produceRead/startBgRead). A hung extraction
-    // otherwise spins forever — no abort, no recovery.
-    const ctrl = new AbortController();
-    const t = window.setTimeout(() => ctrl.abort(), 25000);
-    try {
-      const res = await fetch("/api/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nickname: name,
-          images: images.map((i) => ({ media_type: i.media_type, data: i.data })),
-        }),
-        signal: ctrl.signal,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Couldn't read those.");
-      const msgs = data.messages as TranscriptMessage[];
-      setMessages(msgs);
-      // FLAG-20: show the check screen only when extraction is clearly shaky;
-      // a clean extraction flows straight through (no blanket wall).
-      if (data.needsCheck) {
-        setStage("review");
-      } else {
-        onConfirm(msgs.map((m) => `${m.speaker}: ${m.text}`).join("\n"));
-      }
-    } catch (err) {
-      // Abort → offer the paste path, which routes around a hung vision call.
-      const msg =
-        err instanceof DOMException && err.name === "AbortError"
-          ? "That took too long — try again, or paste the text instead."
-          : err instanceof Error
-            ? err.message
-            : "Couldn't read those — try again, or paste the text instead.";
-      setError(msg);
-      setStage("pick");
-    } finally {
-      window.clearTimeout(t);
-    }
-  }, [images, name, onConfirm]);
-
-  if (stage === "extracting") {
-    return (
-      <>
-        <div className={styles.stepHead}>
-          <TypingDots />
-        </div>
-        <p className={styles.subtext}>
-          Reading your screenshots and stitching them in order&hellip;
-        </p>
-      </>
-    );
-  }
-
-  if (stage === "review") {
-    return (
-      <TranscriptReview
-        name={name}
-        messages={messages}
-        setMessages={setMessages}
-        onRedo={() => setStage("pick")}
-        onConfirm={() => onConfirm(messages.map((m) => `${m.speaker}: ${m.text}`).join("\n"))}
-      />
-    );
-  }
 
   return (
     <>
@@ -1126,9 +1243,9 @@ function PasteShots({
         <button
           className={styles.primary}
           disabled={images.length === 0}
-          onClick={extract}
+          onClick={() => onConfirm(images)}
         >
-          Extract conversation
+          Continue
         </button>
         <button
           className={styles.ghost}
