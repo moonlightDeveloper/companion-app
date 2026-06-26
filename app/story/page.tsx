@@ -40,6 +40,7 @@ type Screen =
   | "plans"
   | "feeling"
   | "email"
+  | "clarify"
   | "read";
 
 const FLOW: Screen[] = [
@@ -151,6 +152,9 @@ export default function Story() {
   const [roster, setRoster] = useState<RosterPerson[]>([]);
   const [personId, setPersonId] = useState<string | undefined>(undefined);
   const [signedIn, setSignedIn] = useState(false);
+  const [clarifyQs, setClarifyQs] = useState<string[]>([]);
+  const [clarifyAns, setClarifyAns] = useState<string[]>([]);
+  const [clarifyLoading, setClarifyLoading] = useState(false);
   const [personReports, setPersonReports] = useState<ClientReport[]>([]);
   const [pattern, setPattern] = useState<string | null>(null);
   const [selectedReport, setSelectedReport] = useState<ClientReport | null>(null);
@@ -181,7 +185,13 @@ export default function Story() {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...answers, email, consent, personId }),
+        body: JSON.stringify({
+          ...answers,
+          email,
+          consent,
+          personId,
+          clarifications: clarifyQs.map((q, i) => ({ q, a: clarifyAns[i] ?? "" })),
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -208,7 +218,7 @@ export default function Story() {
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setStatus("error");
     }
-  }, [answers, email, consent, personId]);
+  }, [answers, email, consent, personId, clarifyQs, clarifyAns]);
 
   // Kick off the live read when we land on the read screen.
   useEffect(() => {
@@ -221,6 +231,40 @@ export default function Story() {
   useEffect(() => {
     evictExpired();
   }, []);
+
+  // Pre-read clarification (FLAG-18): fetch 0–2 questions; none → straight to
+  // the read. Never blocks — any failure degrades to going to the read.
+  useEffect(() => {
+    if (screen !== "clarify") return;
+    let cancelled = false;
+    setClarifyLoading(true);
+    setClarifyQs([]);
+    fetch("/api/clarify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversation: answers.conversation, nickname: name }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return;
+        const qs = Array.isArray(d?.questions) ? d.questions.slice(0, 2) : [];
+        setClarifyLoading(false);
+        if (qs.length === 0) {
+          go("read");
+        } else {
+          setClarifyQs(qs);
+          setClarifyAns(qs.map(() => ""));
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setClarifyLoading(false);
+        go("read");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [screen, answers.conversation, name, go]);
 
   // Load the signed-in user's roster (empty if not signed in) for pick-or-create.
   useEffect(() => {
@@ -367,7 +411,7 @@ export default function Story() {
               onPick={(v) => {
                 setAnswers((a) => ({ ...a, [screen]: v }));
                 // Signed-in users skip the in-flow email/code step.
-                go(screen === "feeling" && signedIn ? "read" : nextOf(screen));
+                go(screen === "feeling" && signedIn ? "clarify" : nextOf(screen));
               }}
             />
           )}
@@ -384,7 +428,7 @@ export default function Story() {
                 setAnswers((a) => ({ ...a, conversation: v }));
                 // "New report" on a known person skips the rest of the context
                 // questions and the email step (already signed in).
-                go(fromPerson ? "read" : "met");
+                go(fromPerson ? "clarify" : "met");
               }}
             />
           )}
@@ -398,10 +442,30 @@ export default function Story() {
               setConsent={setConsent}
               onUnlock={() => {
                 setSignedIn(true);
-                go("read");
+                go("clarify");
               }}
             />
           )}
+
+          {screen === "clarify" &&
+            (clarifyLoading ? (
+              <section className={styles.screen}>
+                <div className={styles.stepHead}>
+                  <TypingDots />
+                </div>
+                <p className={styles.subtext}>
+                  Reading the chat once more before your read&hellip;
+                </p>
+              </section>
+            ) : clarifyQs.length > 0 ? (
+              <ClarifyScreen
+                questions={clarifyQs}
+                onDone={(ans) => {
+                  setClarifyAns(ans);
+                  go("read");
+                }}
+              />
+            ) : null)}
 
           {screen === "read" && (
             <ReadScreen
@@ -1089,6 +1153,72 @@ async function downscaleToBase64(file: File): Promise<ShotImage | null> {
   } catch {
     return null;
   }
+}
+
+function ClarifyScreen({
+  questions,
+  onDone,
+}: {
+  questions: string[];
+  onDone: (answers: string[]) => void;
+}) {
+  const [i, setI] = useState(0);
+  const [answers, setAnswers] = useState<string[]>(() => questions.map(() => ""));
+  const [v, setV] = useState("");
+  const { display, done } = useTypewriter(questions[i]);
+
+  const advance = (answer: string) => {
+    const next = [...answers];
+    next[i] = answer;
+    setAnswers(next);
+    setV("");
+    if (i + 1 < questions.length) setI(i + 1);
+    else onDone(next);
+  };
+
+  return (
+    <section className={styles.screen}>
+      <div className={styles.stepHead}>
+        {questions.length > 1 && (
+          <div className={styles.stepCount}>
+            {i + 1} / {questions.length}
+          </div>
+        )}
+        <div className={styles.questionWrap}>
+          <h2 className={styles.question}>{display}</h2>
+        </div>
+        {done && (
+          <p className={styles.subtext}>
+            Quick check on the chat &mdash; answer or skip, your call.
+          </p>
+        )}
+      </div>
+      <div className={styles.spacer} />
+      <div className={styles.footerActions}>
+        <input
+          className={styles.input}
+          placeholder="A quick answer&hellip;"
+          value={v}
+          onChange={(e) => setV(e.target.value)}
+        />
+        <button
+          className={styles.primary}
+          style={{ marginTop: 12 }}
+          disabled={!v.trim()}
+          onClick={() => advance(v.trim())}
+        >
+          Continue
+        </button>
+        <button
+          className={styles.ghost}
+          style={{ display: "block", width: "100%", marginTop: 8 }}
+          onClick={() => advance("")}
+        >
+          Not sure / skip
+        </button>
+      </div>
+    </section>
+  );
 }
 
 function EmailScreen({

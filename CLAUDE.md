@@ -36,7 +36,7 @@ per-person history of those reads.
 `index.html` and `app.html` at the root are the design source of truth —
 preserve them; port from them, don't delete them.
 
-**What exists today (shipped, FLAG-1 → FLAG-17):**
+**What exists today (shipped, FLAG-1 → FLAG-18):**
 
 - The guided `/story` flow: one-question-at-a-time intake → paste or upload
   screenshots (Claude vision → ordered transcript) → a live behaviour read.
@@ -58,6 +58,8 @@ preserve them; port from them, don't delete them.
   short proving quote but generalize incidental identifying specifics.
 - Voice pass (FLAG-17, §2.10): the read, pattern line, and follow-ups speak as
   a sharp, plain-spoken friend that's openly a tool — warm but honest-over-nice.
+- Pre-read clarification (FLAG-18, §2.11): before the read, 0–2 skippable
+  questions resolve genuine verdict-forking ambiguity in the chat; usually zero.
 
 **Planned (designed, not yet built):**
 
@@ -138,7 +140,7 @@ The engineering reference behind the "saved people / private history / replies"
 work. Shipped: FLAG-8 (magic-link sign-in), FLAG-9 (saved people), FLAG-10
 (on-device conversations), FLAG-11 (pick-or-create), FLAG-12 (reply help),
 FLAG-13 (inline OTP sign-in), FLAG-14 (per-person history & pattern over time),
-FLAG-15 (storage-shape cleanup), FLAG-16 (evidence scrub), FLAG-17 (voice, §2.10). Designed, not yet
+FLAG-15 (storage-shape cleanup), FLAG-16 (evidence scrub), FLAG-17 (voice, §2.10), FLAG-18 (pre-read clarification, §2.11). Designed, not yet
 built: soft identity (§2.8), language & cultural context (§2.9).
 
 **Identity (decided):** passwordless email magic-link / OTP via Resend. User key
@@ -326,6 +328,25 @@ read/reply UI copy.
 Follow-ups always hand the user an action toward the exit (e.g. "want me to draft
 what you'd send?", the one-shot pattern teaser), never open-ended emotional
 probing ("how do you feel?") that deepens rumination (§2.3).
+
+### §2.11 Pre-read clarification (shipped — FLAG-18)
+
+Before the read, a short pass inspects the conversation and asks **0–2 skippable
+questions** — only where a genuine ambiguity would fork the verdict
+(`lib/clarify.ts`, `app/api/clarify`). Biased hard toward **zero**: most chats
+ask nothing and go straight to the read (the user already answered intake — don't
+stack an interview). Hard cap 2, no follow-up tree.
+
+- Questions are about the **conversation's meaning / missing context only** —
+  never the user's feelings (§2.3/§2.10). Plain, specific, neutral (never leading
+  toward the comforting reading).
+- Answers feed the read prompt (`buildUserMessage` "Clarifications" section). A
+  **skipped/ambiguous answer is read as unknown — the read says so, never
+  guesses** (calibrate, don't declare).
+- Clarification answers obey the same identity scrub (§2.2/FLAG-16): an answer
+  can't leak a place/employer into the stored read.
+- **Never blocks.** Any failure, or skipping everything, still yields a
+  calibrated read — clarify is a sharpener, never a gate.
 
 ## Invariants (hard rules — don't break these)
 
