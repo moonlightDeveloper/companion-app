@@ -26,19 +26,43 @@ function getSql() {
 
 let schemaReady: Promise<unknown> | undefined;
 
-/** Create the reads table on first use so there's no separate migration step. */
+/** Create tables on first use so there's no separate migration step. */
 function ensureSchema() {
   const sql = getSql();
-  schemaReady ??= sql`
-    CREATE TABLE IF NOT EXISTS reads (
-      id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      nickname   text NOT NULL,
-      email      text NOT NULL,
-      result     jsonb NOT NULL,
-      created_at timestamptz NOT NULL DEFAULT now()
-    )
-  `;
+  schemaReady ??= (async () => {
+    await sql`
+      CREATE TABLE IF NOT EXISTS users (
+        id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        email      text UNIQUE NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS reads (
+        id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        nickname   text NOT NULL,
+        email      text NOT NULL,
+        result     jsonb NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )
+    `;
+  })();
   return schemaReady;
+}
+
+/**
+ * Find or create a user by email and return their UUID id. Email is a unique
+ * attribute, never the key (see CLAUDE.md §2.1).
+ */
+export async function upsertUser(email: string): Promise<string> {
+  const sql = getSql();
+  await ensureSchema();
+  const rows = await sql<{ id: string }[]>`
+    INSERT INTO users (email) VALUES (${email})
+    ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
+    RETURNING id
+  `;
+  return rows[0].id;
 }
 
 /** Persist a read. Stores nickname + email + result only — no conversation. */
