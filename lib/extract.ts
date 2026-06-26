@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Transcript, TranscriptMessage } from "@/types";
 import { modelFor } from "./models";
 
-/** Thrown when the vision call or JSON parsing fails. */
+/** Thrown when the vision call fails or returns no transcript. */
 export class ExtractError extends Error {}
 
 export interface InputImage {
@@ -31,9 +31,49 @@ function systemPrompt(nickname: string): string {
     "",
     "CONFIDENCE: also report how reliable this extraction is. confidence.level is \"low\" ONLY when extraction is clearly unreliable: unreadable/blurry/cropped text, you genuinely can't tell which side sent messages, the image isn't a chat at all, or the conversation is visibly cut off / structure dropped. Otherwise \"high\". Default to \"high\"; do NOT cry low for minor wording doubt. confidence.issues: a short list of concrete problems (empty array when high).",
     "",
-    "Output ONLY JSON of this exact shape, no prose, no code fences:",
-    '{ "messages": [ { "speaker": "You" | "' + nickname + '", "text": "..." } ], "notes": "optional short note or empty", "notAChat": false, "confidence": { "level": "high" | "low", "issues": [] } }',
+    "Return the result by calling the emit_transcript tool — messages (each { speaker, text }), notAChat, and confidence { level, issues }. Do NOT write any prose, reasoning, or code fences; just call the tool.",
   ].join("\n");
+}
+
+/**
+ * Forced tool-use (FLAG-26): the transcript comes back as schema-validated tool
+ * input, never free-text JSON. Dense real chats made the model prepend reasoning
+ * prose before the JSON, which the old text parser couldn't reliably recover
+ * (~50% failure in prod). speaker stays a plain string — shapeGuard normalises
+ * anything that isn't exactly "You" to the nickname.
+ */
+function transcriptTool(nickname: string): Anthropic.Tool {
+  return {
+    name: "emit_transcript",
+    description: "Return the ordered chat transcript extracted from the screenshots.",
+    input_schema: {
+      type: "object",
+      properties: {
+        messages: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              speaker: { type: "string", description: `"You" or "${nickname}"` },
+              text: { type: "string" },
+            },
+            required: ["speaker", "text"],
+          },
+        },
+        notes: { type: "string", description: "Optional short note, or omitted." },
+        notAChat: { type: "boolean" },
+        confidence: {
+          type: "object",
+          properties: {
+            level: { type: "string", enum: ["high", "low"] },
+            issues: { type: "array", items: { type: "string" } },
+          },
+          required: ["level", "issues"],
+        },
+      },
+      required: ["messages", "notAChat", "confidence"],
+    },
+  };
 }
 
 export async function extractTranscript(
@@ -64,47 +104,32 @@ export async function extractTranscript(
     },
   ];
 
-  let text: string;
+  let input: unknown;
   try {
     const response = await client.messages.create({
       model: modelFor("extract"),
-      max_tokens: 2000,
+      // Headroom (FLAG-26 secondary guard): a dense 6-image transcript can run
+      // ~2k+ output tokens; 2000 was a real ceiling. We only pay for tokens
+      // actually generated, so the headroom is ~free.
+      max_tokens: 8000,
       system: systemPrompt(name),
       messages: [{ role: "user", content }],
+      tools: [transcriptTool(name)],
+      tool_choice: { type: "tool", name: "emit_transcript" },
     });
-    text = response.content
-      .filter((block) => block.type === "text")
-      .map((block) => block.text)
-      .join("")
-      .trim();
+    const toolUse = response.content.find((b) => b.type === "tool_use");
+    if (!toolUse || toolUse.type !== "tool_use") {
+      throw new ExtractError("Model did not return a transcript");
+    }
+    input = toolUse.input;
   } catch (err) {
+    if (err instanceof ExtractError) throw err;
     throw new ExtractError(
       err instanceof Error ? err.message : "Vision request failed",
     );
   }
 
-  return shapeGuard(parseJson(text), name);
-}
-
-function parseJson(text: string): unknown {
-  const cleaned = text
-    .replace(/^```(?:json)?/i, "")
-    .replace(/```$/, "")
-    .trim();
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    const start = cleaned.indexOf("{");
-    const end = cleaned.lastIndexOf("}");
-    if (start !== -1 && end > start) {
-      try {
-        return JSON.parse(cleaned.slice(start, end + 1));
-      } catch {
-        /* fall through */
-      }
-    }
-    throw new ExtractError("Model returned invalid JSON");
-  }
+  return shapeGuard(input, name);
 }
 
 function shapeGuard(raw: unknown, nickname: string): Transcript {
