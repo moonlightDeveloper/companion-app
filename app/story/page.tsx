@@ -992,6 +992,10 @@ function PasteShots({
   const extract = useCallback(async () => {
     setStage("extracting");
     setError("");
+    // Cap the vision call (matches produceRead/startBgRead). A hung extraction
+    // otherwise spins forever — no abort, no recovery.
+    const ctrl = new AbortController();
+    const t = window.setTimeout(() => ctrl.abort(), 25000);
     try {
       const res = await fetch("/api/extract", {
         method: "POST",
@@ -1000,6 +1004,7 @@ function PasteShots({
           nickname: name,
           images: images.map((i) => ({ media_type: i.media_type, data: i.data })),
         }),
+        signal: ctrl.signal,
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Couldn't read those.");
@@ -1013,8 +1018,17 @@ function PasteShots({
         onConfirm(msgs.map((m) => `${m.speaker}: ${m.text}`).join("\n"));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't read those.");
+      // Abort → offer the paste path, which routes around a hung vision call.
+      const msg =
+        err instanceof DOMException && err.name === "AbortError"
+          ? "That took too long — try again, or paste the text instead."
+          : err instanceof Error
+            ? err.message
+            : "Couldn't read those — try again, or paste the text instead.";
+      setError(msg);
       setStage("pick");
+    } finally {
+      window.clearTimeout(t);
     }
   }, [images, name, onConfirm]);
 
@@ -1102,7 +1116,10 @@ function PasteShots({
       )}
 
       {error && (
-        <p className={styles.subtext} style={{ color: "var(--red)" }}>{error}</p>
+        <div className={styles.uploadError} role="alert">
+          <span aria-hidden="true">⚠️</span>
+          <span>{error}</span>
+        </div>
       )}
 
       <div className={styles.footerActions}>

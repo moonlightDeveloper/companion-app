@@ -606,3 +606,22 @@
   font-size: 13.5px;
   line-height: 1.5;
 }
+
+/* Prominent upload-failure banner (FLAG-21 follow-up): a real alert, not the
+   quiet red subtext that read as silence after a bounced/failed extraction. */
+.uploadError {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  background: #fdecea;
+  border: 1px solid var(--red);
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin: 14px 0 4px;
+  color: var(--red);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.uploadError b {
+  font-weight: 600;
+}
