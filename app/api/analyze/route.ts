@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { Intake } from "@/types";
 import { analyze, guardRead, AnalyzeError } from "@/lib/analyze";
-import { saveRead, getOrCreatePerson, createReport, personOwnedBy } from "@/lib/db";
+import { saveRead, getOrCreatePerson, createReport, updateReport, personOwnedBy } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { sendReadEmail } from "@/lib/email";
 
@@ -88,12 +88,20 @@ export async function POST(request: Request) {
   const userId = session?.userId ?? null;
   if (userId) {
     try {
-      const picked = typeof b.personId === "string" ? b.personId : "";
-      personId =
-        picked && (await personOwnedBy(userId, picked))
-          ? picked
-          : await getOrCreatePerson({ userId, nickname });
-      reportId = await createReport({ personId, result: read });
+      // Regenerate-in-place: if a reportId is supplied (a backstop fix), update
+      // that report so only the final read is stored — never a new row.
+      const existing = typeof b.reportId === "string" ? b.reportId : "";
+      if (existing && (await updateReport(userId, existing, read))) {
+        reportId = existing;
+        personId = typeof b.personId === "string" ? b.personId : undefined;
+      } else {
+        const picked = typeof b.personId === "string" ? b.personId : "";
+        personId =
+          picked && (await personOwnedBy(userId, picked))
+            ? picked
+            : await getOrCreatePerson({ userId, nickname });
+        reportId = await createReport({ personId, result: read });
+      }
     } catch (err) {
       console.error("save report failed:", err);
     }

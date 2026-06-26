@@ -51,10 +51,17 @@ export interface TranscriptMessage {
   text: string;
 }
 
+/** Extraction confidence — drives the conditional check screen (FLAG-20). */
+export interface ExtractConfidence {
+  level: "high" | "low";
+  issues: string[];
+}
+
 /** The ordered transcript returned by /api/extract. */
 export interface Transcript {
   messages: TranscriptMessage[];
   notes?: string;
+  confidence?: ExtractConfidence;
 }
 
 /** One editable reply draft in a given tone (from /api/reply). */
