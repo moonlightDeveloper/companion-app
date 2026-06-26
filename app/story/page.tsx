@@ -155,6 +155,7 @@ export default function Story() {
   const [clarifyQs, setClarifyQs] = useState<string[]>([]);
   const [clarifyAns, setClarifyAns] = useState<string[]>([]);
   const [clarifyLoading, setClarifyLoading] = useState(false);
+  const bgReadRef = useRef<{ conv: string; promise: Promise<Read> } | null>(null);
   const [personReports, setPersonReports] = useState<ClientReport[]>([]);
   const [pattern, setPattern] = useState<string | null>(null);
   const [selectedReport, setSelectedReport] = useState<ClientReport | null>(null);
@@ -178,54 +179,104 @@ export default function Story() {
     });
   }, []);
 
-  const runAnalyze = useCallback(async () => {
+  // Safe-B-lite: as soon as the conversation is in hand (after paste), start
+  // generating the read in the background (preview = no auth/save/email) so the
+  // wait overlaps the remaining questions. Capped so it never hangs.
+  const startBgRead = useCallback((conversation: string, intake: Intake) => {
+    const promise = (async () => {
+      const ctrl = new AbortController();
+      const t = window.setTimeout(() => ctrl.abort(), 25000);
+      try {
+        const res = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...intake, conversation, preview: true }),
+          signal: ctrl.signal,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || "preview failed");
+        return data.read as Read;
+      } finally {
+        window.clearTimeout(t);
+      }
+    })();
+    promise.catch(() => {}); // produceRead handles failures; avoid unhandled rejection
+    bgReadRef.current = { conv: conversation, promise };
+  }, []);
+
+  const produceRead = useCallback(async () => {
     setStatus("loading");
     setError("");
+    const clarifications = clarifyQs.map((q, i) => ({ q, a: clarifyAns[i] ?? "" }));
+
+    const freshPreview = async (): Promise<Read> => {
+      const ctrl = new AbortController();
+      const t = window.setTimeout(() => ctrl.abort(), 25000);
+      try {
+        const res = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...answers, preview: true, clarifications }),
+          signal: ctrl.signal,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || "Something went wrong.");
+        return data.read as Read;
+      } finally {
+        window.clearTimeout(t);
+      }
+    };
+
     try {
-      const res = await fetch("/api/analyze", {
+      let read: Read;
+      const bg = bgReadRef.current;
+      // Use the background read ONLY when there are no clarifications to fold in
+      // and it was started for this exact conversation. Otherwise generate fresh
+      // (full context + the clarify answers). Background failure → fresh.
+      if (clarifications.length === 0 && bg && bg.conv === answers.conversation) {
+        try {
+          read = await bg.promise;
+        } catch {
+          read = await freshPreview();
+        }
+      } else {
+        read = await freshPreview();
+      }
+      bgReadRef.current = null;
+      setRead(read);
+      setStatus("done");
+
+      // Persist (non-blocking) — only the final read is stored; conversation is
+      // never re-sent. Then drop the conversation on-device tagged with the ids.
+      fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...answers,
-          email,
-          consent,
-          personId,
-          clarifications: clarifyQs.map((q, i) => ({ q, a: clarifyAns[i] ?? "" })),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || "Something went wrong.");
-      }
-      const { emailed: sent, personId: savedPersonId, reportId, ...rest } = data as Read & {
-        emailed?: boolean;
-        personId?: string;
-        reportId?: string;
-      };
-      setEmailed(sent !== false);
-      setRead(rest as Read);
-      setStatus("done");
-      // Create order: the read is saved server-side first; only then does the
-      // raw conversation land on-device, tagged with the returned ids.
-      if (savedPersonId && reportId) {
-        saveConversation({
-          personId: savedPersonId,
-          reportId,
-          text: answers.conversation,
-        }).catch(() => {});
-      }
+        body: JSON.stringify({ read, name: answers.name, email, consent, personId }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          setEmailed(data?.emailed !== false);
+          if (data?.personId && data?.reportId) {
+            saveConversation({
+              personId: data.personId,
+              reportId: data.reportId,
+              text: answers.conversation,
+            }).catch(() => {});
+          }
+        })
+        .catch(() => {});
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setStatus("error");
     }
   }, [answers, email, consent, personId, clarifyQs, clarifyAns]);
 
-  // Kick off the live read when we land on the read screen.
+  // Kick off the read when we land on the read screen.
   useEffect(() => {
     if (screen === "read" && status === "idle") {
-      runAnalyze();
+      produceRead();
     }
-  }, [screen, status, runAnalyze]);
+  }, [screen, status, produceRead]);
 
   // Lazy eviction of expired on-device conversations on app-open (§2.1).
   useEffect(() => {
@@ -426,6 +477,8 @@ export default function Story() {
               value={answers.conversation}
               onContinue={(v) => {
                 setAnswers((a) => ({ ...a, conversation: v }));
+                // Safe-B-lite: start generating the read now, in the background.
+                startBgRead(v, { ...answers, conversation: v });
                 // "New report" on a known person skips the rest of the context
                 // questions and the email step (already signed in).
                 go(fromPerson ? "clarify" : "met");
@@ -475,7 +528,7 @@ export default function Story() {
               error={error}
               emailed={emailed}
               conversation={answers.conversation}
-              onRetry={runAnalyze}
+              onRetry={produceRead}
             />
           )}
         </main>
@@ -1536,9 +1589,7 @@ function ReadScreen({
       <section className={styles.screen}>
         <div className={styles.stepHead}>
           <div className={styles.questionWrap} style={{ minHeight: 60 }}>
-            <h2 className={styles.question}>
-              Reading {name}&rsquo;s behavior&hellip;
-            </h2>
+            <h2 className={styles.question}>Putting it together&hellip;</h2>
           </div>
           <TypingDots />
         </div>

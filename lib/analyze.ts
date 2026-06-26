@@ -75,6 +75,11 @@ function parseJson(text: string): unknown {
   }
 }
 
+/** Sanitize any object into a valid Read (used to persist a previewed read). */
+export function guardRead(raw: unknown): Read {
+  return shapeGuard(raw);
+}
+
 function shapeGuard(raw: unknown): Read {
   const obj = isRecord(raw) ? raw : {};
 

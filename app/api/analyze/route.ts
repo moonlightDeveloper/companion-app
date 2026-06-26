@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { Intake } from "@/types";
-import { analyze, AnalyzeError } from "@/lib/analyze";
+import { analyze, guardRead, AnalyzeError } from "@/lib/analyze";
 import { saveRead, getOrCreatePerson, createReport, personOwnedBy } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { sendReadEmail } from "@/lib/email";
@@ -9,6 +9,14 @@ export const runtime = "nodejs";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/**
+ * Three modes:
+ * - preview (Safe-B-lite, FLAG-19): generate the read only — no auth, no save,
+ *   no email — so it can run in the background before the user signs in.
+ * - save: persist an already-generated (previewed) read; the read is re-guarded
+ *   and the conversation is never re-sent.
+ * - legacy: generate + save + email in one call (the original path).
+ */
 export async function POST(request: Request) {
   let body: unknown;
   try {
@@ -22,15 +30,28 @@ export async function POST(request: Request) {
     unknown
   >;
 
-  // A signed-in session is the source of truth for who this is; the email it
-  // carries is implied consent. Anonymous callers must supply email + consent.
+  // ---- preview: generate only ------------------------------------------------
+  if (b.preview === true) {
+    const intake = coerceIntake(b);
+    if (!intake.conversation.trim()) {
+      return NextResponse.json(
+        { error: "Please paste at least a few lines of the conversation." },
+        { status: 400 },
+      );
+    }
+    try {
+      const read = await analyze(intake, coerceClarifications(b));
+      return NextResponse.json({ read });
+    } catch (err) {
+      return analyzeErrorResponse(err);
+    }
+  }
+
+  // ---- save / legacy: gate, then persist + email -----------------------------
   const session = await getSession();
   const email = session?.email || (typeof b.email === "string" ? b.email.trim() : "");
   if (!EMAIL_RE.test(email)) {
-    return NextResponse.json(
-      { error: "Please enter a valid email address." },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
   }
   if (!session && b.consent !== true) {
     return NextResponse.json(
@@ -40,56 +61,33 @@ export async function POST(request: Request) {
   }
 
   const intake = coerceIntake(b);
-  if (!intake.conversation.trim()) {
+  const hasPrecomputed = typeof b.read === "object" && b.read !== null;
+  if (!hasPrecomputed && !intake.conversation.trim()) {
     return NextResponse.json(
       { error: "Please paste at least a few lines of the conversation." },
       { status: 400 },
     );
   }
 
-  // Optional pre-read clarifications (FLAG-18). Empty answer = skipped/ambiguous.
-  const clarifications = Array.isArray(b.clarifications)
-    ? b.clarifications
-        .map((c) => {
-          const r = (typeof c === "object" && c !== null ? c : {}) as Record<string, unknown>;
-          return {
-            q: typeof r.q === "string" ? r.q : "",
-            a: typeof r.a === "string" ? r.a : "",
-          };
-        })
-        .filter((c) => c.q)
-        .slice(0, 2)
-    : [];
-
   let read;
-  try {
-    read = await analyze(intake, clarifications);
-  } catch (err) {
-    if (err instanceof AnalyzeError && err.message === "Missing ANTHROPIC_API_KEY") {
-      console.error("ANTHROPIC_API_KEY is not configured");
-      return NextResponse.json(
-        { error: "The reading service isn't configured yet." },
-        { status: 500 },
-      );
+  if (hasPrecomputed) {
+    read = guardRead(b.read); // save mode: persist the previewed read
+  } else {
+    try {
+      read = await analyze(intake, coerceClarifications(b));
+    } catch (err) {
+      return analyzeErrorResponse(err);
     }
-    console.error("analyze failed:", err);
-    return NextResponse.json(
-      { error: "I couldn't generate a read just now. Please try again." },
-      { status: 502 },
-    );
   }
 
-  // Persist the read (result only — never the conversation). Signed-in users
-  // get a report under a person (the create-order seam FLAG-10 needs); anon
-  // users keep today's email-keyed save. Either way it's non-blocking.
+  // Persist (result only — never the conversation). Signed-in → report under a
+  // person; anon → email-keyed save. Non-blocking.
   const nickname = intake.name || "this person";
   let personId: string | undefined;
   let reportId: string | undefined;
   const userId = session?.userId ?? null;
   if (userId) {
     try {
-      // If the user picked an existing person, attach to it (after verifying
-      // ownership); otherwise resolve/create by nickname.
       const picked = typeof b.personId === "string" ? b.personId : "";
       personId =
         picked && (await personOwnedBy(userId, picked))
@@ -107,7 +105,6 @@ export async function POST(request: Request) {
     }
   }
 
-  // Email is non-blocking: a mail failure must never look like a read failure.
   let emailed = false;
   try {
     await sendReadEmail({ to: email, nickname, read });
@@ -117,6 +114,33 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ ...read, emailed, personId, reportId });
+}
+
+function analyzeErrorResponse(err: unknown) {
+  if (err instanceof AnalyzeError && err.message === "Missing ANTHROPIC_API_KEY") {
+    console.error("ANTHROPIC_API_KEY is not configured");
+    return NextResponse.json(
+      { error: "The reading service isn't configured yet." },
+      { status: 500 },
+    );
+  }
+  console.error("analyze failed:", err);
+  return NextResponse.json(
+    { error: "I couldn't generate a read just now. Please try again." },
+    { status: 502 },
+  );
+}
+
+function coerceClarifications(b: Record<string, unknown>) {
+  return Array.isArray(b.clarifications)
+    ? b.clarifications
+        .map((c) => {
+          const r = (typeof c === "object" && c !== null ? c : {}) as Record<string, unknown>;
+          return { q: typeof r.q === "string" ? r.q : "", a: typeof r.a === "string" ? r.a : "" };
+        })
+        .filter((c) => c.q)
+        .slice(0, 2)
+    : [];
 }
 
 function coerceIntake(b: Record<string, unknown>): Intake {
