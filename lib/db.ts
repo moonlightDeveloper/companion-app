@@ -184,10 +184,38 @@ export async function createReport(params: {
   await ensureSchema();
   const rows = await sql<{ id: string }[]>`
     INSERT INTO reports (person_id, result)
-    VALUES (${params.personId}, ${JSON.stringify(params.result)}::jsonb)
+    VALUES (${params.personId}, ${sql.json(params.result as never)})
     RETURNING id
   `;
   return rows[0].id;
+}
+
+export interface StoredReport {
+  id: string;
+  result: Read;
+  created_at: Date;
+}
+
+/** A person's reports, newest first — ownership-checked (CLAUDE.md §2.5). */
+export async function listReports(
+  userId: string,
+  personId: string,
+): Promise<StoredReport[]> {
+  const sql = getSql();
+  await ensureSchema();
+  const rows = await sql<{ id: string; result: unknown; created_at: Date }[]>`
+    SELECT r.id, r.result, r.created_at
+    FROM reports r
+    JOIN persons p ON p.id = r.person_id
+    WHERE r.person_id = ${personId} AND p.user_id = ${userId}
+    ORDER BY r.created_at DESC
+  `;
+  return rows.map((r) => ({
+    id: r.id,
+    created_at: r.created_at,
+    // Tolerate older rows that were stored as a JSON string.
+    result: (typeof r.result === "string" ? JSON.parse(r.result) : r.result) as Read,
+  }));
 }
 
 /**
@@ -215,7 +243,7 @@ export async function saveRead(params: {
   await ensureSchema();
   await sql`
     INSERT INTO reads (nickname, email, result)
-    VALUES (${params.nickname}, ${params.email}, ${JSON.stringify(params.result)}::jsonb)
+    VALUES (${params.nickname}, ${params.email}, ${sql.json(params.result as never)})
   `;
 }
 

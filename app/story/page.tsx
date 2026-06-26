@@ -21,12 +21,15 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { Intake, Read, ReplyDraft, TranscriptMessage } from "@/types";
-import { saveConversation, evictExpired } from "@/lib/localConversations";
+import { saveConversation, evictExpired, getConversation } from "@/lib/localConversations";
 import styles from "./story.module.css";
 
 type Screen =
   | "cover"
   | "pick"
+  | "person"
+  | "history"
+  | "report"
   | "name"
   | "origin"
   | "situation"
@@ -130,6 +133,7 @@ const emptyIntake: Intake = {
 type Status = "idle" | "loading" | "error" | "done";
 
 type RosterPerson = { id: string; nickname: string; differentiator: string | null };
+type ClientReport = { id: string; result: Read; created_at: string };
 
 /** Mirrors the server's normalizeNickname for collision checks (CLAUDE.md §2.7). */
 const normalizeNickname = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
@@ -147,6 +151,10 @@ export default function Story() {
   const [roster, setRoster] = useState<RosterPerson[]>([]);
   const [personId, setPersonId] = useState<string | undefined>(undefined);
   const [signedIn, setSignedIn] = useState(false);
+  const [personReports, setPersonReports] = useState<ClientReport[]>([]);
+  const [pattern, setPattern] = useState<string | null>(null);
+  const [selectedReport, setSelectedReport] = useState<ClientReport | null>(null);
+  const [fromPerson, setFromPerson] = useState(false);
 
   const name = answers.name.trim() || "this person";
 
@@ -235,13 +243,29 @@ export default function Story() {
       .catch(() => {});
   }, []);
 
+  // On the person overview, load their past reports + the cross-report pattern.
+  useEffect(() => {
+    if (screen !== "person" || !personId) return;
+    setPersonReports([]);
+    setPattern(null);
+    fetch(`/api/persons/${personId}/reports`)
+      .then((r) => r.json())
+      .then((d) => setPersonReports(Array.isArray(d?.reports) ? d.reports : []))
+      .catch(() => {});
+    fetch(`/api/persons/${personId}/pattern?nickname=${encodeURIComponent(name)}`)
+      .then((r) => r.json())
+      .then((d) => setPattern(typeof d?.insight === "string" ? d.insight : null))
+      .catch(() => {});
+  }, [screen, personId, name]);
+
   const idx = FLOW.indexOf(screen);
-  const progress =
-    screen === "cover" || screen === "pick"
-      ? 0
-      : idx < 0
-        ? 100
-        : Math.round((idx / (FLOW.length - 1)) * 100);
+  const progress = (["cover", "pick", "person", "history", "report"] as Screen[]).includes(
+    screen,
+  )
+    ? 0
+    : idx < 0
+      ? 100
+      : Math.round((idx / (FLOW.length - 1)) * 100);
 
   return (
     <div className={`${styles.stage} storyTheme`}>
@@ -276,12 +300,47 @@ export default function Story() {
               onPick={(p) => {
                 setPersonId(p.id);
                 setAnswers((a) => ({ ...a, name: p.nickname }));
-                go("origin");
+                go("person");
               }}
               onNew={() => {
                 setPersonId(undefined);
                 go("name");
               }}
+            />
+          )}
+
+          {screen === "person" && (
+            <PersonScreen
+              nickname={name}
+              reports={personReports}
+              pattern={pattern}
+              onNewReport={() => {
+                setFromPerson(true);
+                setStatus("idle");
+                setRead(null);
+                setAnswers((a) => ({ ...a, conversation: "" }));
+                go("paste");
+              }}
+              onSeePast={() => go("history")}
+            />
+          )}
+
+          {screen === "history" && (
+            <HistoryScreen
+              nickname={name}
+              reports={personReports}
+              onOpen={(r) => {
+                setSelectedReport(r);
+                go("report");
+              }}
+            />
+          )}
+
+          {screen === "report" && selectedReport && (
+            <ReportScreen
+              nickname={name}
+              report={selectedReport}
+              canReply={personReports.slice(0, 3).some((r) => r.id === selectedReport.id)}
             />
           )}
 
@@ -323,7 +382,9 @@ export default function Story() {
               value={answers.conversation}
               onContinue={(v) => {
                 setAnswers((a) => ({ ...a, conversation: v }));
-                go("met");
+                // "New report" on a known person skips the rest of the context
+                // questions and the email step (already signed in).
+                go(fromPerson ? "read" : "met");
               }}
             />
           )}
@@ -1177,6 +1238,152 @@ function EmailScreen({
   );
 }
 
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return isNaN(d.getTime())
+    ? ""
+    : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function PersonScreen({
+  nickname,
+  reports,
+  pattern,
+  onNewReport,
+  onSeePast,
+}: {
+  nickname: string;
+  reports: ClientReport[];
+  pattern: string | null;
+  onNewReport: () => void;
+  onSeePast: () => void;
+}) {
+  const count = reports.length;
+  const { display } = useTypewriter(`Your reads about ${nickname}`);
+  return (
+    <section className={styles.screen}>
+      <div className={styles.stepHead}>
+        <div className={styles.questionWrap}>
+          <h2 className={styles.question}>{display}</h2>
+        </div>
+        {count > 0 && (
+          <p className={styles.subtext}>
+            You&rsquo;ve read {nickname} {count} time{count === 1 ? "" : "s"}.
+          </p>
+        )}
+      </div>
+
+      {count >= 2 && (
+        <div className={`${styles.insight} ${styles.relax}`}>
+          <div className={styles.k}>What keeps happening</div>
+          <p style={{ fontSize: 14 }}>{pattern ?? "Looking across your reads…"}</p>
+        </div>
+      )}
+
+      <div className={styles.spacer} />
+      <div className={styles.footerActions}>
+        <button className={styles.primary} onClick={onNewReport}>
+          New report
+        </button>
+        {count > 0 && (
+          <button
+            className={styles.ghost}
+            style={{ display: "block", width: "100%", marginTop: 8 }}
+            onClick={onSeePast}
+          >
+            See past reads
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function HistoryScreen({
+  nickname,
+  reports,
+  onOpen,
+}: {
+  nickname: string;
+  reports: ClientReport[];
+  onOpen: (r: ClientReport) => void;
+}) {
+  return (
+    <section className={styles.screen}>
+      <div className={styles.stepHead}>
+        <div className={styles.questionWrap}>
+          <h2 className={styles.question}>Your reads about {nickname}</h2>
+        </div>
+        <p className={styles.subtext}>Newest first &mdash; something you read and close.</p>
+      </div>
+      <div className={styles.options}>
+        {reports.map((r) => (
+          <button key={r.id} className={styles.option} onClick={() => onOpen(r)}>
+            <span>
+              <b>{r.result.headline}</b>
+              <br />
+              <span style={{ fontSize: 12, color: "var(--muted, #7a6b66)" }}>
+                {formatDate(r.created_at)} &middot; {r.result.status_tag}
+              </span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ReportScreen({
+  nickname,
+  report,
+  canReply,
+}: {
+  nickname: string;
+  report: ClientReport;
+  canReply: boolean;
+}) {
+  const read = report.result;
+  const [conversation, setConversation] = useState<string | null>(null);
+  useEffect(() => {
+    if (canReply && !read.safety.flag) {
+      getConversation(report.id).then(setConversation).catch(() => {});
+    }
+  }, [canReply, report.id, read.safety.flag]);
+
+  return (
+    <section className={styles.screen}>
+      <div className={styles.stepHead}>
+        <div className={styles.questionWrap} style={{ minHeight: 60 }}>
+          <h2 className={styles.question}>{read.headline}</h2>
+        </div>
+        <p className={styles.subtext}>
+          {formatDate(report.created_at)} &middot; your read on {nickname}
+        </p>
+      </div>
+
+      {read.safety.flag ? (
+        <div className={`${styles.insight} ${styles.relax}`}>
+          <div className={styles.k}>You matter here</div>
+          <p style={{ fontSize: 14 }}>
+            {read.safety.note ||
+              "Some of what you shared worries me for your safety. Please reach out to people you trust."}
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className={styles.status}>
+            <span className={styles.pill}>{read.status_tag}</span>
+          </div>
+          <ReadBody read={read} />
+          {canReply && conversation && conversation.trim() && (
+            <ReplyHelper name={nickname} conversation={conversation} />
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 function ReadScreen({
   name,
   status,
@@ -1264,9 +1471,6 @@ function ReadScreen({
     );
   }
 
-  const toneColor = (tone: string) =>
-    tone === "good" ? "var(--green)" : tone === "low" ? "var(--red)" : "var(--amber)";
-
   return (
     <section className={styles.screen}>
       <div className={styles.stepHead}>
@@ -1290,12 +1494,32 @@ function ReadScreen({
           : "Saved. We couldn’t email it just now, but it’s here for you."}
       </p>
 
+      <ReadBody read={read} />
+
+      {/* Reply help only exists while the conversation is in hand right now. */}
+      {conversation.trim() && <ReplyHelper name={name} conversation={conversation} />}
+
+      <div className={styles.footerActions}>
+        <Link href="/" className={styles.secondary} style={{ display: "block", textAlign: "center" }}>
+          Done for now
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+/** The shared body of a read (bars, cards, move, grounding) — used by the live
+ * read screen and by opened past reports. */
+function ReadBody({ read }: { read: Read }) {
+  const toneColor = (tone: string) =>
+    tone === "good" ? "var(--green)" : tone === "low" ? "var(--red)" : "var(--amber)";
+  return (
+    <>
       <div className={styles.bars}>
         {read.bars.map((b, i) => (
           <BarRow key={i} bar={b} color={toneColor(b.tone)} />
         ))}
       </div>
-
       <div>
         {read.cards.map((c, i) => (
           <div key={i} className={styles.insight}>
@@ -1304,31 +1528,20 @@ function ReadScreen({
             <p>{c.body}</p>
           </div>
         ))}
-
         {read.suggested_move && (
           <div className={`${styles.insight} ${styles.move}`}>
             <div className={styles.k}>Suggested move</div>
             <p style={{ fontSize: 14 }}>{read.suggested_move}</p>
           </div>
         )}
-
         {read.where_this_leaves_you && (
           <div className={`${styles.insight} ${styles.relax}`}>
             <div className={styles.k}>Where this leaves you</div>
             <p style={{ fontSize: 14 }}>{read.where_this_leaves_you}</p>
           </div>
         )}
-
-        {/* Reply help only exists while the conversation is in hand right now. */}
-        {conversation.trim() && <ReplyHelper name={name} conversation={conversation} />}
       </div>
-
-      <div className={styles.footerActions}>
-        <Link href="/" className={styles.secondary} style={{ display: "block", textAlign: "center" }}>
-          Done for now
-        </Link>
-      </div>
-    </section>
+    </>
   );
 }
 
