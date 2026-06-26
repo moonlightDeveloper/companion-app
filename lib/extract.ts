@@ -1,7 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Transcript, TranscriptMessage } from "@/types";
-
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+import { modelFor } from "./models";
 
 /** Thrown when the vision call or JSON parsing fails. */
 export class ExtractError extends Error {}
@@ -68,7 +67,7 @@ export async function extractTranscript(
   let text: string;
   try {
     const response = await client.messages.create({
-      model: process.env.MODEL || DEFAULT_MODEL,
+      model: modelFor("extract"),
       max_tokens: 2000,
       system: systemPrompt(name),
       messages: [{ role: "user", content }],

@@ -8,8 +8,7 @@ import type {
   ReadCard,
 } from "@/types";
 import { SYSTEM_PROMPT, buildUserMessage, type Clarification } from "@/lib/prompt";
-
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+import { modelFor } from "./models";
 
 /** Thrown when the model call or JSON parsing fails. */
 export class AnalyzeError extends Error {}
@@ -32,7 +31,7 @@ export async function analyze(
   let text: string;
   try {
     const response = await client.messages.create({
-      model: process.env.MODEL || DEFAULT_MODEL,
+      model: modelFor("analyze"),
       max_tokens: 2000,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: buildUserMessage(intake, clarifications) }],
