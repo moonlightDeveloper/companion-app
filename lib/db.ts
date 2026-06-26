@@ -203,19 +203,13 @@ export async function listReports(
 ): Promise<StoredReport[]> {
   const sql = getSql();
   await ensureSchema();
-  const rows = await sql<{ id: string; result: unknown; created_at: Date }[]>`
+  return sql<StoredReport[]>`
     SELECT r.id, r.result, r.created_at
     FROM reports r
     JOIN persons p ON p.id = r.person_id
     WHERE r.person_id = ${personId} AND p.user_id = ${userId}
     ORDER BY r.created_at DESC
   `;
-  return rows.map((r) => ({
-    id: r.id,
-    created_at: r.created_at,
-    // Tolerate older rows that were stored as a JSON string.
-    result: (typeof r.result === "string" ? JSON.parse(r.result) : r.result) as Read,
-  }));
 }
 
 /**
