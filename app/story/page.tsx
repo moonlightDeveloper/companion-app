@@ -20,7 +20,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { Intake, Read, TranscriptMessage } from "@/types";
+import type { Intake, Read, ReplyDraft, TranscriptMessage } from "@/types";
 import { saveConversation, evictExpired } from "@/lib/localConversations";
 import styles from "./story.module.css";
 
@@ -331,6 +331,7 @@ export default function Story() {
               read={read}
               error={error}
               emailed={emailed}
+              conversation={answers.conversation}
               onRetry={runAnalyze}
             />
           )}
@@ -1089,6 +1090,7 @@ function ReadScreen({
   read,
   error,
   emailed,
+  conversation,
   onRetry,
 }: {
   name: string;
@@ -1096,6 +1098,7 @@ function ReadScreen({
   read: Read | null;
   error: string;
   emailed: boolean;
+  conversation: string;
   onRetry: () => void;
 }) {
   if (status === "loading" || status === "idle") {
@@ -1222,6 +1225,9 @@ function ReadScreen({
             <p style={{ fontSize: 14 }}>{read.where_this_leaves_you}</p>
           </div>
         )}
+
+        {/* Reply help only exists while the conversation is in hand right now. */}
+        {conversation.trim() && <ReplyHelper name={name} conversation={conversation} />}
       </div>
 
       <div className={styles.footerActions}>
@@ -1230,6 +1236,107 @@ function ReadScreen({
         </Link>
       </div>
     </section>
+  );
+}
+
+function ReplyHelper({ name, conversation }: { name: string; conversation: string }) {
+  const [open, setOpen] = useState(false);
+  const [intent, setIntent] = useState("");
+  const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [error, setError] = useState("");
+  const [drafts, setDrafts] = useState<ReplyDraft[]>([]);
+
+  const generate = async () => {
+    if (!intent.trim()) return;
+    setStatus("loading");
+    setError("");
+    try {
+      const res = await fetch("/api/reply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversation, intent, nickname: name }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Couldn't draft a reply.");
+      setDrafts(data.drafts as ReplyDraft[]);
+      setStatus("idle");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't draft a reply.");
+      setStatus("error");
+    }
+  };
+
+  if (!open) {
+    return (
+      <button
+        className={styles.secondary}
+        style={{ display: "block", width: "100%", marginTop: 12 }}
+        onClick={() => setOpen(true)}
+      >
+        Help me write a reply
+      </button>
+    );
+  }
+
+  return (
+    <div className={styles.insight} style={{ marginTop: 12 }}>
+      <div className={styles.k}>Help me reply</div>
+      <p className={styles.subtext} style={{ marginTop: 0 }}>
+        What do you want to get across? I&rsquo;ll draft a few you can edit.
+      </p>
+      <input
+        className={styles.input}
+        placeholder="e.g. I'm keen but want a real plan, not a maybe"
+        value={intent}
+        onChange={(e) => setIntent(e.target.value)}
+      />
+      <button
+        className={styles.primary}
+        style={{ marginTop: 10 }}
+        disabled={status === "loading" || !intent.trim()}
+        onClick={generate}
+      >
+        {status === "loading" ? "Drafting…" : drafts.length ? "Try again" : "Draft replies"}
+      </button>
+      {status === "error" && (
+        <p className={styles.subtext} style={{ color: "var(--red)" }}>{error}</p>
+      )}
+      {drafts.map((d, i) => (
+        <DraftCard key={i} draft={d} />
+      ))}
+    </div>
+  );
+}
+
+function DraftCard({ draft }: { draft: ReplyDraft }) {
+  const [text, setText] = useState(draft.text);
+  const [copied, setCopied] = useState(false);
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div className={styles.barhead}>
+        <b>{draft.tone}</b>
+        <button
+          className={styles.ghost}
+          onClick={() => {
+            navigator.clipboard?.writeText(text).then(
+              () => {
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 1500);
+              },
+              () => {},
+            );
+          }}
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <textarea
+        className={styles.textarea}
+        style={{ minHeight: 72 }}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+    </div>
   );
 }
 
