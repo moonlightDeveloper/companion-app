@@ -36,7 +36,7 @@ per-person history of those reads.
 `index.html` and `app.html` at the root are the design source of truth —
 preserve them; port from them, don't delete them.
 
-**What exists today (shipped, FLAG-1 → FLAG-18):**
+**What exists today (shipped, FLAG-1 → FLAG-19):**
 
 - The guided `/story` flow: one-question-at-a-time intake → paste or upload
   screenshots (Claude vision → ordered transcript) → a live behaviour read.
@@ -60,6 +60,9 @@ preserve them; port from them, don't delete them.
   a sharp, plain-spoken friend that's openly a tool — warm but honest-over-nice.
 - Pre-read clarification (FLAG-18, §2.11): before the read, 0–2 skippable
   questions resolve genuine verdict-forking ambiguity in the chat; usually zero.
+- Background read / Safe-B-lite (FLAG-19, §2.12): the read is generated in the
+  background once the conversation's in hand, so the wait overlaps the remaining
+  questions and the read just appears whole.
 
 **Planned (designed, not yet built):**
 
@@ -99,7 +102,7 @@ or every route 404s (dev server chokes on a production `.next`).
 - `app/story/page.tsx` — the guided flow + screenshot upload/extraction/review,
   pick-or-create entry, per-person overview/history, and reply help (ported from `app.html`)
 - `app/signin/page.tsx` — magic-link sign-in; `app/delete/page.tsx` — delete-my-data
-- `app/api/analyze` → `lib/analyze.ts` — the behaviour read (Claude → JSON)
+- `app/api/analyze` → `lib/analyze.ts` — the read (Claude → JSON); 3 modes: preview (generate-only), save (persist a previewed read), legacy (§2.12)
 - `app/api/extract` → `lib/extract.ts` — screenshots → ordered transcript (Claude vision)
 - `app/api/reply` → `lib/reply.ts` — 2–3 reply drafts (Claude)
 - `app/api/auth/{request,verify,signout}` → `lib/auth.ts` — magic-link + session
@@ -140,7 +143,7 @@ The engineering reference behind the "saved people / private history / replies"
 work. Shipped: FLAG-8 (magic-link sign-in), FLAG-9 (saved people), FLAG-10
 (on-device conversations), FLAG-11 (pick-or-create), FLAG-12 (reply help),
 FLAG-13 (inline OTP sign-in), FLAG-14 (per-person history & pattern over time),
-FLAG-15 (storage-shape cleanup), FLAG-16 (evidence scrub), FLAG-17 (voice, §2.10), FLAG-18 (pre-read clarification, §2.11). Designed, not yet
+FLAG-15 (storage-shape cleanup), FLAG-16 (evidence scrub), FLAG-17 (voice, §2.10), FLAG-18 (pre-read clarification, §2.11), FLAG-19 (background read, §2.12). Designed, not yet
 built: soft identity (§2.8), language & cultural context (§2.9).
 
 **Identity (decided):** passwordless email magic-link / OTP via Resend. User key
@@ -328,6 +331,26 @@ read/reply UI copy.
 Follow-ups always hand the user an action toward the exit (e.g. "want me to draft
 what you'd send?", the one-shot pattern teaser), never open-ended emotional
 probing ("how do you feel?") that deepens rumination (§2.3).
+
+### §2.12 Background read / Safe-B-lite (shipped — FLAG-19)
+
+The read takes ~10s. To hide it, `/api/analyze` gains a **`preview` mode**
+(generate the read only — no auth, no save, no email) so it can run in the
+**background as soon as the conversation is in hand** (after paste), overlapping
+the remaining questions. The read is shown whole when ready; a **save mode**
+(`{ read, … }`) persists the previewed read after sign-in. Three modes total:
+preview, save, legacy (generate+save+email).
+
+- **clarify=0** (the common case): the background read is final → shown instantly,
+  no visible assembly.
+- **clarify≥1** (rare): the background read is discarded and a fresh read is
+  generated **with** the clarifications + full context, behind the calm
+  "Putting it together…" beat.
+- **Never breaks:** background failure / slow / abort (25s cap) → fall back to a
+  fresh single read; never a spinner-forever, never a half-read.
+- The backgrounded read omits `met/plans/feeling` (asked after paste) — verified
+  a negligible delta; the read is transcript-dominated. Only the final read is
+  stored; conversation stays IndexedDB-only; FLAG-16 scrub + §2.2/§2.10 intact.
 
 ### §2.11 Pre-read clarification (shipped — FLAG-18)
 
