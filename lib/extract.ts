@@ -26,10 +26,14 @@ function systemPrompt(nickname: string): string {
     "",
     "Transcribe message text faithfully (keep emoji and wording). Skip UI chrome, reactions, read receipts, and typing indicators.",
     "",
+    "VOICE MESSAGES: a voice-message bubble (a waveform/play button with a duration and NO text) is content you can't hear. Represent each one as a message whose text is exactly \"[voice message]\", attributed to the correct side. Do NOT guess what it said.",
+    "",
+    "NOT A CHAT: set notAChat to true ONLY when the image clearly isn't a messaging conversation at all — a settings screen, a photo, an incoming-call screen, a document. A sparse, thin, or one-sided REAL chat is still a chat: notAChat MUST be false for it. When in doubt, false.",
+    "",
     "CONFIDENCE: also report how reliable this extraction is. confidence.level is \"low\" ONLY when extraction is clearly unreliable: unreadable/blurry/cropped text, you genuinely can't tell which side sent messages, the image isn't a chat at all, or the conversation is visibly cut off / structure dropped. Otherwise \"high\". Default to \"high\"; do NOT cry low for minor wording doubt. confidence.issues: a short list of concrete problems (empty array when high).",
     "",
     "Output ONLY JSON of this exact shape, no prose, no code fences:",
-    '{ "messages": [ { "speaker": "You" | "' + nickname + '", "text": "..." } ], "notes": "optional short note or empty", "confidence": { "level": "high" | "low", "issues": [] } }',
+    '{ "messages": [ { "speaker": "You" | "' + nickname + '", "text": "..." } ], "notes": "optional short note or empty", "notAChat": false, "confidence": { "level": "high" | "low", "issues": [] } }',
   ].join("\n");
 }
 
@@ -130,6 +134,7 @@ function shapeGuard(raw: unknown, nickname: string): Transcript {
     messages,
     notes: typeof obj.notes === "string" && obj.notes.trim() ? obj.notes.trim() : undefined,
     confidence,
+    notAChat: obj.notAChat === true,
   };
 }
 
