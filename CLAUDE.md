@@ -36,7 +36,7 @@ per-person history of those reads.
 `index.html` and `app.html` at the root are the design source of truth —
 preserve them; port from them, don't delete them.
 
-**What exists today (shipped, FLAG-1 → FLAG-16):**
+**What exists today (shipped, FLAG-1 → FLAG-17):**
 
 - The guided `/story` flow: one-question-at-a-time intake → paste or upload
   screenshots (Claude vision → ordered transcript) → a live behaviour read.
@@ -56,6 +56,8 @@ preserve them; port from them, don't delete them.
   after a one-time migration). Do not reintroduce double-encoding.
 - Evidence-vs-identifying-detail scrub (FLAG-16, §2.2): stored reads keep a
   short proving quote but generalize incidental identifying specifics.
+- Voice pass (FLAG-17, §2.10): the read, pattern line, and follow-ups speak as
+  a sharp, plain-spoken friend that's openly a tool — warm but honest-over-nice.
 
 **Planned (designed, not yet built):**
 
@@ -136,7 +138,7 @@ The engineering reference behind the "saved people / private history / replies"
 work. Shipped: FLAG-8 (magic-link sign-in), FLAG-9 (saved people), FLAG-10
 (on-device conversations), FLAG-11 (pick-or-create), FLAG-12 (reply help),
 FLAG-13 (inline OTP sign-in), FLAG-14 (per-person history & pattern over time),
-FLAG-15 (storage-shape cleanup), FLAG-16 (evidence scrub). Designed, not yet
+FLAG-15 (storage-shape cleanup), FLAG-16 (evidence scrub), FLAG-17 (voice, §2.10). Designed, not yet
 built: soft identity (§2.8), language & cultural context (§2.9).
 
 **Identity (decided):** passwordless email magic-link / OTP via Resend. User key
@@ -305,6 +307,25 @@ means the first read no longer requires a code.
 - Nuance quality degrades in lower-resource languages even when literal
   comprehension holds — prefer calibrated/uncertain reads there (§2.2), and test
   subtext on real non-English cases rather than assuming parity with English.
+
+### §2.10 Voice (shipped — FLAG-17)
+
+The read and its follow-ups speak like a sharp, plain-spoken friend who is
+openly a tool — warm, direct, takes a position. Honesty IS the friendliness:
+blunt because it's a tool with no stake; never soften a real red flag to be nice
+(comforting over true is the failure this product exists to avoid). No performed
+feelings, no therapy-speak, no corporate hedging, no folksy/cute quips. Plain
+words, contractions, short sentences.
+
+Voice only — it never loosens the analysis: §2.2 (behaviour not intent, cite
+evidence, strip identifying detail, no mind-reading) and §2.3 (no
+engagement-bait) still hold; warmer wording must not soften the verdict. Enforced
+at the prompt level (`lib/prompt.ts`, mirrored in `lib/pattern.ts`) and in the
+read/reply UI copy.
+
+Follow-ups always hand the user an action toward the exit (e.g. "want me to draft
+what you'd send?", the one-shot pattern teaser), never open-ended emotional
+probing ("how do you feel?") that deepens rumination (§2.3).
 
 ## Invariants (hard rules — don't break these)
 

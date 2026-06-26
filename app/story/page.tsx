@@ -1579,7 +1579,7 @@ function ReplyHelper({ name, conversation }: { name: string; conversation: strin
         style={{ display: "block", width: "100%", marginTop: 12 }}
         onClick={() => setOpen(true)}
       >
-        Help me write a reply
+        Want me to draft what you&rsquo;d send?
       </button>
     );
   }
@@ -1588,7 +1588,7 @@ function ReplyHelper({ name, conversation }: { name: string; conversation: strin
     <div className={styles.insight} style={{ marginTop: 12 }}>
       <div className={styles.k}>Help me reply</div>
       <p className={styles.subtext} style={{ marginTop: 0 }}>
-        What do you want to get across? I&rsquo;ll draft a few you can edit.
+        Tell me what you want to land &mdash; I&rsquo;ll draft a few ways to say it.
       </p>
       <input
         className={styles.input}
