@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import type { Intake } from "@/types";
 import { analyze, AnalyzeError } from "@/lib/analyze";
-import { saveRead } from "@/lib/db";
+import { saveRead, getOrCreatePerson, createReport } from "@/lib/db";
+import { getUserId } from "@/lib/auth";
 import { sendReadEmail } from "@/lib/email";
 
 export const runtime = "nodejs";
@@ -62,24 +63,38 @@ export async function POST(request: Request) {
     );
   }
 
-  // Save the read (nickname + email + result only — never the conversation).
-  // The save must succeed; we still return the read so the user sees it.
-  try {
-    await saveRead({ nickname: intake.name || "this person", email, result: read });
-  } catch (err) {
-    console.error("saveRead failed:", err);
+  // Persist the read (result only — never the conversation). Signed-in users
+  // get a report under a person (the create-order seam FLAG-10 needs); anon
+  // users keep today's email-keyed save. Either way it's non-blocking.
+  const nickname = intake.name || "this person";
+  let personId: string | undefined;
+  let reportId: string | undefined;
+  const userId = await getUserId();
+  if (userId) {
+    try {
+      personId = await getOrCreatePerson({ userId, nickname });
+      reportId = await createReport({ personId, result: read });
+    } catch (err) {
+      console.error("save report failed:", err);
+    }
+  } else {
+    try {
+      await saveRead({ nickname, email, result: read });
+    } catch (err) {
+      console.error("saveRead failed:", err);
+    }
   }
 
   // Email is non-blocking: a mail failure must never look like a read failure.
   let emailed = false;
   try {
-    await sendReadEmail({ to: email, nickname: intake.name || "this person", read });
+    await sendReadEmail({ to: email, nickname, read });
     emailed = true;
   } catch (err) {
     console.error("sendReadEmail failed:", err);
   }
 
-  return NextResponse.json({ ...read, emailed });
+  return NextResponse.json({ ...read, emailed, personId, reportId });
 }
 
 function coerceIntake(b: Record<string, unknown>): Intake {
