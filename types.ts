@@ -57,6 +57,12 @@ export interface Transcript {
   notes?: string;
 }
 
+/** One editable reply draft in a given tone (from /api/reply). */
+export interface ReplyDraft {
+  tone: string;
+  text: string;
+}
+
 /** The intake answers collected by the guided story flow. */
 export interface Intake {
   name: string;
