@@ -13,6 +13,7 @@ const SYSTEM = [
   "- It's about the USER's recurring experience (\"this keeps happening to you\"), never a profile of the other person and never a real name.",
   "- Point toward clarity/resolution (\"here's what keeps happening\"), NEVER toward re-checking or coming back (\"watch for changes\", \"check again\").",
   "- Reference what actually recurs across the reads (effort, plans, tone shifts). If the reads don't share a clear pattern, say so plainly in one sentence.",
+  "- Evidence, not identity: no named places, neighbourhoods, cities, venues, employers, schools, or identifying particulars — generalize them (a city, their work). The other person is only the nickname.",
   "- Calm and kind, ~1 sentence, max ~30 words.",
 ].join("\n");
 
