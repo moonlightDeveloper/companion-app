@@ -13,6 +13,7 @@ RULES:
 - When the behaviour looks healthy and consistent, say so plainly and tell them they can relax. Do not manufacture doubt.
 - Refer to the other person only by the nickname the user gave. Use plain, warm language. No clinical labels, no diagnosing.
 - Evidence, not identity. You may keep a SHORT quoted phrase that proves a behaviour (e.g. "maybe, I'll let you know"). But strip incidental identifying specifics drawn from the conversation — named places, neighbourhoods, cities, venues, employers, schools, and similar particulars — and replace them with a neutral generalization (a city, their work, a specific place, a particular day). Keep the behaviour and the proving quote; drop the identifying detail. If a quote itself contains such a particular, generalize it inside the quote or paraphrase the behaviour instead. Examples: instead of "Monday meet-up in Bavaro... pivots to Miami", write "raised a specific meet-up, then pivoted to a different place"; instead of quoting "depends how Berlin goes" verbatim, write "deferred it conditionally on an upcoming trip". The other person is only ever the nickname.
+- Clarifications: if the user answered clarifying questions about the conversation, use them to sharpen the read. If one was skipped/left ambiguous, treat that point as unknown — read it as uncertain and say so plainly; never guess to fill the gap. Clarifying answers obey the same evidence/identity rules above: never let an answer leak an identifying specific into the read.
 - Safety: if the conversation shows threats, coercion, control, or the user seems unsafe or in crisis, set safety.flag to true, write a short calm supportive note pointing them toward trusted people or local support services, and keep the rest of the read minimal.
 
 VOICE (phrasing only — never loosens the analysis):
@@ -29,8 +30,17 @@ Output ONLY valid minified JSON in exactly this shape — no markdown, no code f
 
 Provide 2-4 bars and 2-3 cards. Each bar's "tone" must be one of good, caution, low. Each card's "kind" must be exactly "Pattern" or "What I'd watch". Every point must tie to something observable in what the user shared.`;
 
-/** Builds the user message from the guided-intake answers. */
-export function buildUserMessage(intake: Intake): string {
+export interface Clarification {
+  q: string;
+  /** Empty string means the user skipped — that point is left ambiguous. */
+  a: string;
+}
+
+/** Builds the user message from the guided-intake answers (+ any clarifications). */
+export function buildUserMessage(
+  intake: Intake,
+  clarifications: Clarification[] = [],
+): string {
   const nickname = intake.name?.trim() || "this person";
   const lines = [
     `I want to understand ${nickname}'s behaviour. Here is the context I gave you, one answer at a time:`,
@@ -45,9 +55,20 @@ export function buildUserMessage(intake: Intake): string {
     "",
     "The conversation (only what I chose to share):",
     intake.conversation?.trim() || "(no conversation pasted)",
-    "",
-    `Give me your behaviour read of ${nickname} as JSON in the required shape.`,
   ];
+
+  if (clarifications.length) {
+    lines.push(
+      "",
+      "I answered these clarifying questions about the conversation. Use them to sharpen the read. A skipped answer means that point is genuinely unclear — read it as unknown, do not guess:",
+    );
+    for (const c of clarifications) {
+      lines.push(`- Q: ${c.q}`);
+      lines.push(`  A: ${c.a.trim() ? c.a.trim() : "(skipped — left ambiguous)"}`);
+    }
+  }
+
+  lines.push("", `Give me your behaviour read of ${nickname} as JSON in the required shape.`);
   return lines.join("\n");
 }
 

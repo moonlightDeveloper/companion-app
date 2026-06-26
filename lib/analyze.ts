@@ -7,7 +7,7 @@ import type {
   ReadBar,
   ReadCard,
 } from "@/types";
-import { SYSTEM_PROMPT, buildUserMessage } from "@/lib/prompt";
+import { SYSTEM_PROMPT, buildUserMessage, type Clarification } from "@/lib/prompt";
 
 const DEFAULT_MODEL = "claude-sonnet-4-6";
 
@@ -18,7 +18,10 @@ export class AnalyzeError extends Error {}
  * Calls the model, parses its JSON, and shape-guards the result so a stray or
  * missing field can never crash the UI.
  */
-export async function analyze(intake: Intake): Promise<Read> {
+export async function analyze(
+  intake: Intake,
+  clarifications: Clarification[] = [],
+): Promise<Read> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new AnalyzeError("Missing ANTHROPIC_API_KEY");
@@ -32,7 +35,7 @@ export async function analyze(intake: Intake): Promise<Read> {
       model: process.env.MODEL || DEFAULT_MODEL,
       max_tokens: 2000,
       system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: buildUserMessage(intake) }],
+      messages: [{ role: "user", content: buildUserMessage(intake, clarifications) }],
     });
     text = response.content
       .filter((block) => block.type === "text")

@@ -47,9 +47,23 @@ export async function POST(request: Request) {
     );
   }
 
+  // Optional pre-read clarifications (FLAG-18). Empty answer = skipped/ambiguous.
+  const clarifications = Array.isArray(b.clarifications)
+    ? b.clarifications
+        .map((c) => {
+          const r = (typeof c === "object" && c !== null ? c : {}) as Record<string, unknown>;
+          return {
+            q: typeof r.q === "string" ? r.q : "",
+            a: typeof r.a === "string" ? r.a : "",
+          };
+        })
+        .filter((c) => c.q)
+        .slice(0, 2)
+    : [];
+
   let read;
   try {
-    read = await analyze(intake);
+    read = await analyze(intake, clarifications);
   } catch (err) {
     if (err instanceof AnalyzeError && err.message === "Missing ANTHROPIC_API_KEY") {
       console.error("ANTHROPIC_API_KEY is not configured");
