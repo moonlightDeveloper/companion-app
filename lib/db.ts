@@ -34,9 +34,13 @@ function ensureSchema() {
       CREATE TABLE IF NOT EXISTS users (
         id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         email      text UNIQUE NOT NULL,
+        verified   boolean NOT NULL DEFAULT false,
         created_at timestamptz NOT NULL DEFAULT now()
       )
     `;
+    // Soft-identity tier (FLAG-22, §2.8): a soft-user is just a users row with
+    // verified=false; magic-link/OTP flips it to true in place (no migration).
+    await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS verified boolean NOT NULL DEFAULT false`;
     await sql`
       CREATE TABLE IF NOT EXISTS reads (
         id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -242,6 +246,21 @@ export async function upsertUser(email: string): Promise<string> {
     RETURNING id
   `;
   return rows[0].id;
+}
+
+/** A user's stored email (for the recognition second-factor match), or null. */
+export async function getUserEmail(userId: string): Promise<string | null> {
+  const sql = getSql();
+  await ensureSchema();
+  const rows = await sql<{ email: string }[]>`SELECT email FROM users WHERE id = ${userId}`;
+  return rows[0]?.email ?? null;
+}
+
+/** Flip a user to verified (the magic-link cross-device upgrade, §2.8). */
+export async function markVerified(userId: string): Promise<void> {
+  const sql = getSql();
+  await ensureSchema();
+  await sql`UPDATE users SET verified = true WHERE id = ${userId}`;
 }
 
 /** Persist a read. Stores nickname + email + result only — no conversation. */

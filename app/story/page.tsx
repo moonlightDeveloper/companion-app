@@ -26,6 +26,7 @@ import styles from "./story.module.css";
 
 type Screen =
   | "cover"
+  | "welcome"
   | "pick"
   | "person"
   | "history"
@@ -267,6 +268,8 @@ export default function Story() {
         .then((data) => {
           setEmailed(data?.emailed !== false);
           if (data?.personId && data?.reportId) {
+            // The mint set a soft identity + session — recognized from now on.
+            setSignedIn(true);
             savedRef.current = { personId: data.personId, reportId: data.reportId };
             saveConversation({
               personId: data.personId,
@@ -336,7 +339,9 @@ export default function Story() {
       .catch(() => {});
   }, []);
 
-  // Am I already signed in? If so, the in-flow email/code step is skipped.
+  // Entry routing (FLAG-22): a recognized session jumps straight to the roster;
+  // a known device (soft token, no session) gets the welcome/recognition step;
+  // a true first-timer stays on the cover.
   useEffect(() => {
     fetch("/api/me")
       .then((r) => r.json())
@@ -344,6 +349,9 @@ export default function Story() {
         if (d?.signedIn) {
           setSignedIn(true);
           if (typeof d.email === "string") setEmail(d.email);
+          setScreen("pick");
+        } else if (d?.hasSoftToken) {
+          setScreen("welcome");
         }
       })
       .catch(() => {});
@@ -500,6 +508,17 @@ export default function Story() {
             />
           )}
 
+          {screen === "welcome" && (
+            <WelcomeScreen
+              onRecognized={(em) => {
+                setSignedIn(true);
+                setEmail(em);
+                setScreen("pick");
+              }}
+              onFresh={() => setScreen("cover")}
+            />
+          )}
+
           {screen === "email" && (
             <EmailScreen
               name={name}
@@ -507,10 +526,7 @@ export default function Story() {
               consent={consent}
               setEmail={setEmail}
               setConsent={setConsent}
-              onUnlock={() => {
-                setSignedIn(true);
-                go("clarify");
-              }}
+              onUnlock={() => go("clarify")}
             />
           )}
 
@@ -1322,6 +1338,115 @@ function ClarifyScreen({
   );
 }
 
+function WelcomeScreen({
+  onRecognized,
+  onFresh,
+}: {
+  onRecognized: (email: string) => void;
+  onFresh: () => void;
+}) {
+  const { display, done } = useTypewriter("Welcome back.");
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+
+  const submit = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/auth/recognize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const data = await res.json();
+      if (data?.recognized) onRecognized(email.trim());
+      else setError("That email doesn’t match this device — you can start fresh below.");
+    } catch {
+      setError("Something went wrong — you can start fresh below.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className={styles.screen}>
+      <div className={styles.stepHead}>
+        <div className={styles.questionWrap}>
+          <h2 className={styles.question}>{display}</h2>
+        </div>
+        {done && (
+          <p className={styles.subtext}>
+            Enter your email to pick up your saved reads on this device.
+          </p>
+        )}
+      </div>
+      <div className={styles.spacer} />
+      <div className={styles.footerActions}>
+        <input
+          className={styles.input}
+          type="email"
+          placeholder="you@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <button
+          className={styles.primary}
+          style={{ marginTop: 12 }}
+          disabled={!valid || busy}
+          onClick={submit}
+        >
+          {busy ? "Checking…" : "Continue"}
+        </button>
+        <button
+          className={styles.ghost}
+          style={{ display: "block", width: "100%", marginTop: 8 }}
+          onClick={onFresh}
+        >
+          Start fresh instead
+        </button>
+        {error && (
+          <p className={styles.subtext} style={{ color: "var(--red)", marginTop: 8 }}>
+            {error}
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function XDeviceOffer() {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem("companion_xdevice_offered")) setShow(true);
+    } catch {}
+  }, []);
+  if (!show) return null;
+  const dismiss = () => {
+    try {
+      localStorage.setItem("companion_xdevice_offered", "1");
+    } catch {}
+    setShow(false);
+  };
+  return (
+    <p className={styles.subtext} style={{ marginTop: 12, textAlign: "center" }}>
+      <Link href="/signin" onClick={dismiss} style={{ color: "var(--accent)" }}>
+        Want your reads on any device? Verify your email &rarr;
+      </Link>{" "}
+      <button
+        className={styles.ghost}
+        style={{ padding: "0 6px" }}
+        onClick={dismiss}
+        aria-label="Dismiss"
+      >
+        ✕
+      </button>
+    </p>
+  );
+}
+
 function EmailScreen({
   name,
   email,
@@ -1338,50 +1463,8 @@ function EmailScreen({
   onUnlock: () => void;
 }) {
   const { display, done } = useTypewriter("Where should I send your read?");
-  const [step, setStep] = useState<"email" | "code">("email");
-  const [code, setCode] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
   const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const ready = valid && consent;
-
-  const sendCode = async () => {
-    setBusy(true);
-    setError("");
-    try {
-      const res = await fetch("/api/auth/otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Couldn't send a code.");
-      setStep("code");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't send a code.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const confirm = async () => {
-    setBusy(true);
-    setError("");
-    try {
-      const res = await fetch("/api/auth/otp/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), code: code.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Invalid code.");
-      onUnlock();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Invalid code.");
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
     <section className={styles.screen}>
@@ -1391,79 +1474,43 @@ function EmailScreen({
         </div>
         {done && (
           <p className={styles.subtext}>
-            {step === "email"
-              ? `Free — add your email to unlock ${name}'s read. We'll send a quick code so it saves to you and remembers who you've read.`
-              : `Enter the 6-digit code we just emailed to ${email.trim()}.`}
+            Free &mdash; add your email to get {name}&rsquo;s read. You&rsquo;ll see it
+            here either way; we&rsquo;ll also email a copy and save it under your nickname.
           </p>
         )}
       </div>
       <div className={styles.spacer} />
       <div className={styles.footerActions}>
-        {step === "email" ? (
-          <>
-            <input
-              className={styles.input}
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-            <label className={styles.consent}>
-              <input
-                type="checkbox"
-                checked={consent}
-                onChange={(e) => setConsent(e.target.checked)}
-              />
-              <span>
-                Email me my read and save it under my nickname. The conversation I
-                pasted is never stored.
-              </span>
-            </label>
-            <button
-              className={styles.primary}
-              style={{ marginTop: 12 }}
-              disabled={!ready || busy}
-              onClick={sendCode}
-            >
-              {busy ? "Sending…" : "Send me a code"}
-            </button>
-          </>
-        ) : (
-          <>
-            <input
-              className={styles.input}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              placeholder="123456"
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-            />
-            <button
-              className={styles.primary}
-              style={{ marginTop: 12 }}
-              disabled={code.length !== 6 || busy}
-              onClick={confirm}
-            >
-              {busy ? "Confirming…" : "Confirm & see my read"}
-            </button>
-            <button
-              className={styles.ghost}
-              style={{ display: "block", width: "100%", marginTop: 8 }}
-              onClick={() => {
-                setStep("email");
-                setCode("");
-                setError("");
-              }}
-            >
-              Use a different email
-            </button>
-          </>
-        )}
-        {error && (
-          <p className={styles.subtext} style={{ color: "var(--red)", marginTop: 8 }}>
-            {error}
-          </p>
-        )}
+        <input
+          className={styles.input}
+          type="email"
+          placeholder="you@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <label className={styles.consent}>
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={(e) => setConsent(e.target.checked)}
+          />
+          <span>
+            Email me my read and save it under my nickname. The conversation I pasted is
+            never stored.
+          </span>
+        </label>
+        <p className={styles.subtext} style={{ marginTop: 8, fontSize: 12 }}>
+          We&rsquo;ll remember you on this device so you can come back to your reads &mdash;
+          clear your browser to undo.
+        </p>
+        <button
+          className={styles.primary}
+          style={{ marginTop: 12 }}
+          disabled={!ready}
+          onClick={onUnlock}
+        >
+          See my read
+        </button>
       </div>
     </section>
   );
@@ -1741,6 +1788,9 @@ function ReadScreen({
           onFix={onFix}
         />
       )}
+
+      {/* Cross-device upgrade — offered once, after value, never a wall. */}
+      <XDeviceOffer />
 
       <div className={styles.footerActions}>
         <Link href="/" className={styles.secondary} style={{ display: "block", textAlign: "center" }}>

@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server";
 import type { Intake } from "@/types";
 import { analyze, guardRead, AnalyzeError } from "@/lib/analyze";
-import { saveRead, getOrCreatePerson, createReport, updateReport, personOwnedBy } from "@/lib/db";
-import { getSession } from "@/lib/auth";
+import { getOrCreatePerson, createReport, updateReport, personOwnedBy, upsertUser } from "@/lib/db";
+import {
+  getSession,
+  createSoftValue,
+  createSessionValue,
+  SOFT_COOKIE,
+  SESSION_COOKIE,
+  SOFT_MAX_AGE,
+  SESSION_MAX_AGE,
+} from "@/lib/auth";
 import { sendReadEmail } from "@/lib/email";
 
 export const runtime = "nodejs";
@@ -85,6 +93,7 @@ export async function POST(request: Request) {
   const nickname = intake.name || "this person";
   let personId: string | undefined;
   let reportId: string | undefined;
+  let mintedUserId: string | null = null; // set when we mint a soft identity
   const userId = session?.userId ?? null;
   if (userId) {
     try {
@@ -106,10 +115,16 @@ export async function POST(request: Request) {
       console.error("save report failed:", err);
     }
   } else {
+    // FLAG-22: anonymous first read → mint a soft-user (verified=false) and save
+    // the report under it. NON-BLOCKING: any failure just means "not recognized
+    // next time" — the read is still returned below.
     try {
-      await saveRead({ nickname, email, result: read });
+      mintedUserId = await upsertUser(email);
+      personId = await getOrCreatePerson({ userId: mintedUserId, nickname });
+      reportId = await createReport({ personId, result: read });
     } catch (err) {
-      console.error("saveRead failed:", err);
+      console.error("soft mint failed:", err);
+      mintedUserId = null;
     }
   }
 
@@ -121,7 +136,23 @@ export async function POST(request: Request) {
     console.error("sendReadEmail failed:", err);
   }
 
-  return NextResponse.json({ ...read, emailed, personId, reportId });
+  const res = NextResponse.json({ ...read, emailed, personId, reportId });
+  // Mint cookies only after a successful soft-user create. Token = persistent
+  // device identity; session = this visit's working auth.
+  if (mintedUserId) {
+    const opts = {
+      httpOnly: true,
+      sameSite: "lax" as const,
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+    };
+    res.cookies.set(SOFT_COOKIE, createSoftValue(mintedUserId), { ...opts, maxAge: SOFT_MAX_AGE });
+    res.cookies.set(SESSION_COOKIE, createSessionValue(mintedUserId, email), {
+      ...opts,
+      maxAge: SESSION_MAX_AGE,
+    });
+  }
+  return res;
 }
 
 function analyzeErrorResponse(err: unknown) {
