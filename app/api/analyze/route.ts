@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { Intake } from "@/types";
 import { analyze, AnalyzeError } from "@/lib/analyze";
-import { saveRead, getOrCreatePerson, createReport } from "@/lib/db";
+import { saveRead, getOrCreatePerson, createReport, personOwnedBy } from "@/lib/db";
 import { getUserId } from "@/lib/auth";
 import { sendReadEmail } from "@/lib/email";
 
@@ -72,7 +72,13 @@ export async function POST(request: Request) {
   const userId = await getUserId();
   if (userId) {
     try {
-      personId = await getOrCreatePerson({ userId, nickname });
+      // If the user picked an existing person, attach to it (after verifying
+      // ownership); otherwise resolve/create by nickname.
+      const picked = typeof b.personId === "string" ? b.personId : "";
+      personId =
+        picked && (await personOwnedBy(userId, picked))
+          ? picked
+          : await getOrCreatePerson({ userId, nickname });
       reportId = await createReport({ personId, result: read });
     } catch (err) {
       console.error("save report failed:", err);

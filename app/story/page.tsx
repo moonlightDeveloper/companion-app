@@ -26,6 +26,7 @@ import styles from "./story.module.css";
 
 type Screen =
   | "cover"
+  | "pick"
   | "name"
   | "origin"
   | "situation"
@@ -128,6 +129,11 @@ const emptyIntake: Intake = {
 
 type Status = "idle" | "loading" | "error" | "done";
 
+type RosterPerson = { id: string; nickname: string; differentiator: string | null };
+
+/** Mirrors the server's normalizeNickname for collision checks (CLAUDE.md §2.7). */
+const normalizeNickname = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+
 export default function Story() {
   const [screen, setScreen] = useState<Screen>("cover");
   const [history, setHistory] = useState<Screen[]>([]);
@@ -138,6 +144,8 @@ export default function Story() {
   const [email, setEmail] = useState("");
   const [consent, setConsent] = useState(false);
   const [emailed, setEmailed] = useState(true);
+  const [roster, setRoster] = useState<RosterPerson[]>([]);
+  const [personId, setPersonId] = useState<string | undefined>(undefined);
 
   const name = answers.name.trim() || "this person";
 
@@ -164,13 +172,13 @@ export default function Story() {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...answers, email, consent }),
+        body: JSON.stringify({ ...answers, email, consent, personId }),
       });
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data?.error || "Something went wrong.");
       }
-      const { emailed: sent, personId, reportId, ...rest } = data as Read & {
+      const { emailed: sent, personId: savedPersonId, reportId, ...rest } = data as Read & {
         emailed?: boolean;
         personId?: string;
         reportId?: string;
@@ -180,16 +188,18 @@ export default function Story() {
       setStatus("done");
       // Create order: the read is saved server-side first; only then does the
       // raw conversation land on-device, tagged with the returned ids.
-      if (personId && reportId) {
-        saveConversation({ personId, reportId, text: answers.conversation }).catch(
-          () => {},
-        );
+      if (savedPersonId && reportId) {
+        saveConversation({
+          personId: savedPersonId,
+          reportId,
+          text: answers.conversation,
+        }).catch(() => {});
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setStatus("error");
     }
-  }, [answers, email, consent]);
+  }, [answers, email, consent, personId]);
 
   // Kick off the live read when we land on the read screen.
   useEffect(() => {
@@ -203,9 +213,21 @@ export default function Story() {
     evictExpired();
   }, []);
 
+  // Load the signed-in user's roster (empty if not signed in) for pick-or-create.
+  useEffect(() => {
+    fetch("/api/persons")
+      .then((r) => r.json())
+      .then((d) => setRoster(Array.isArray(d?.persons) ? d.persons : []))
+      .catch(() => {});
+  }, []);
+
   const idx = FLOW.indexOf(screen);
   const progress =
-    screen === "cover" ? 0 : idx < 0 ? 100 : Math.round((idx / (FLOW.length - 1)) * 100);
+    screen === "cover" || screen === "pick"
+      ? 0
+      : idx < 0
+        ? 100
+        : Math.round((idx / (FLOW.length - 1)) * 100);
 
   return (
     <div className={`${styles.stage} storyTheme`}>
@@ -230,12 +252,31 @@ export default function Story() {
           <div className={styles.bar} style={{ width: `${progress}%` }} />
         </div>
         <main className={styles.main}>
-          {screen === "cover" && <Cover onStart={() => go("name")} />}
+          {screen === "cover" && (
+            <Cover onStart={() => go(roster.length ? "pick" : "name")} />
+          )}
+
+          {screen === "pick" && (
+            <PickScreen
+              roster={roster}
+              onPick={(p) => {
+                setPersonId(p.id);
+                setAnswers((a) => ({ ...a, name: p.nickname }));
+                go("origin");
+              }}
+              onNew={() => {
+                setPersonId(undefined);
+                go("name");
+              }}
+            />
+          )}
 
           {screen === "name" && (
             <NameScreen
               value={answers.name}
+              roster={roster}
               onContinue={(v) => {
+                setPersonId(undefined);
                 setAnswers((a) => ({ ...a, name: v.trim() || "Alex" }));
                 go("origin");
               }}
@@ -393,15 +434,61 @@ function Cover({ onStart }: { onStart: () => void }) {
   );
 }
 
+function PickScreen({
+  roster,
+  onPick,
+  onNew,
+}: {
+  roster: RosterPerson[];
+  onPick: (p: RosterPerson) => void;
+  onNew: () => void;
+}) {
+  const { display, done } = useTypewriter("Who is this about?");
+  return (
+    <section className={styles.screen}>
+      <div className={styles.stepHead}>
+        <div className={styles.questionWrap}>
+          <h2 className={styles.question}>{display}</h2>
+        </div>
+        {done && (
+          <p className={styles.subtext}>
+            Pick someone you&rsquo;ve added before, or start with someone new.
+          </p>
+        )}
+      </div>
+      {done && (
+        <div className={styles.options}>
+          {roster.map((p) => (
+            <button key={p.id} className={styles.option} onClick={() => onPick(p)}>
+              <span>
+                {p.nickname}
+                {p.differentiator ? ` – ${p.differentiator}` : ""}
+              </span>
+            </button>
+          ))}
+          <button className={styles.option} onClick={onNew}>
+            <span>+ Someone new</span>
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function NameScreen({
   value,
+  roster,
   onContinue,
 }: {
   value: string;
+  roster: RosterPerson[];
   onContinue: (v: string) => void;
 }) {
   const { display, done } = useTypewriter(QUESTION.name!);
   const [v, setV] = useState(value);
+  const collision = roster.some(
+    (p) => p.nickname && normalizeNickname(p.nickname) === normalizeNickname(v),
+  );
   return (
     <section className={styles.screen}>
       <div className={styles.stepHead}>
@@ -424,6 +511,13 @@ function NameScreen({
           value={v}
           onChange={(e) => setV(e.target.value)}
         />
+        {collision && (
+          <p className={styles.subtext} style={{ marginTop: 8 }}>
+            You already have a &ldquo;{v.trim()}&rdquo;. Add something to tell them
+            apart &mdash; like &ldquo;{v.trim()} – Hinge&rdquo; &mdash; or keep it
+            to add to that same person.
+          </p>
+        )}
         <button
           className={styles.primary}
           style={{ marginTop: 12 }}
