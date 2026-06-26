@@ -39,6 +39,33 @@ export async function sendReadEmail(params: {
   if (error) throw new EmailError(error.message || "Resend send failed");
 }
 
+/** Send a passwordless sign-in link. */
+export async function sendMagicLink(params: { to: string; url: string }): Promise<void> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) throw new EmailError("Missing RESEND_API_KEY");
+
+  const resend = new Resend(apiKey);
+  const from = process.env.RESEND_FROM || SANDBOX_FROM;
+  const url = esc(params.url);
+
+  const { error } = await resend.emails.send({
+    from,
+    to: params.to,
+    subject: "Your Companion sign-in link",
+    html: wrap(`
+      <h1 style="${H1}">Sign in to Companion</h1>
+      <p style="${P}">Tap the button to sign in. This link works once and expires in 15 minutes.</p>
+      <p style="margin:18px 0;">
+        <a href="${url}" style="display:inline-block;background:#c0392f;color:#fff;text-decoration:none;padding:11px 18px;border-radius:10px;font-size:14px;">Sign in</a>
+      </p>
+      <p style="${P}">If you didn't request this, you can ignore it.</p>
+    `),
+    text: `Sign in to Companion (link works once, expires in 15 min):\n${params.url}\n\nIf you didn't request this, ignore it.`,
+  });
+
+  if (error) throw new EmailError(error.message || "Resend send failed");
+}
+
 function deleteUrl(): string {
   const base = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   return `${base.replace(/\/$/, "")}/delete`;
