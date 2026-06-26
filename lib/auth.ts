@@ -59,17 +59,32 @@ export function verifyMagicToken(token: string): string | null {
   return p.email;
 }
 
-/** Value stored in the session cookie — carries the userId. */
-export function createSessionValue(userId: string): string {
-  return sign({ t: "session", uid: userId, exp: Date.now() + SESSION_TTL_MS });
+/** Value stored in the session cookie — carries the userId and email. */
+export function createSessionValue(userId: string, email: string): string {
+  return sign({ t: "session", uid: userId, email, exp: Date.now() + SESSION_TTL_MS });
 }
 
-/** Current signed-in userId from the session cookie, or null. */
-export async function getUserId(): Promise<string | null> {
+export interface Session {
+  userId: string;
+  email: string;
+}
+
+/** Current signed-in session from the cookie, or null. */
+export async function getSession(): Promise<Session | null> {
   const raw = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!raw) return null;
   const p = unsign(raw);
   if (!p || p.t !== "session" || typeof p.uid !== "string") return null;
   if (typeof p.exp !== "number" || p.exp < Date.now()) return null;
-  return p.uid;
+  return { userId: p.uid, email: typeof p.email === "string" ? p.email : "" };
+}
+
+/** Current signed-in userId, or null. */
+export async function getUserId(): Promise<string | null> {
+  return (await getSession())?.userId ?? null;
+}
+
+/** Deterministic hash of a one-time code, scoped to the email. */
+export function hashCode(email: string, code: string): string {
+  return crypto.createHmac("sha256", secret()).update(`${email}:${code}`).digest("base64url");
 }
