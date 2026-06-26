@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   try {
     const userId = await upsertUser(email);
     const res = NextResponse.redirect(`${base}/story`);
-    res.cookies.set(SESSION_COOKIE, createSessionValue(userId), {
+    res.cookies.set(SESSION_COOKIE, createSessionValue(userId, email), {
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",

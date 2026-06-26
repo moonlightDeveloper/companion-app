@@ -69,8 +69,54 @@ function ensureSchema() {
         created_at timestamptz NOT NULL DEFAULT now()
       )
     `;
+    // login_codes: short-lived one-time sign-in codes (hashed), one per email,
+    // with an attempt counter so a 6-digit code can't be brute-forced.
+    await sql`
+      CREATE TABLE IF NOT EXISTS login_codes (
+        email      text PRIMARY KEY,
+        code_hash  text NOT NULL,
+        expires_at timestamptz NOT NULL,
+        attempts   int NOT NULL DEFAULT 0
+      )
+    `;
   })();
   return schemaReady;
+}
+
+/** Store (or replace) the pending one-time code for an email. */
+export async function setLoginCode(
+  email: string,
+  codeHash: string,
+  expiresAt: Date,
+): Promise<void> {
+  const sql = getSql();
+  await ensureSchema();
+  await sql`
+    INSERT INTO login_codes (email, code_hash, expires_at, attempts)
+    VALUES (${email}, ${codeHash}, ${expiresAt}, 0)
+    ON CONFLICT (email)
+      DO UPDATE SET code_hash = EXCLUDED.code_hash, expires_at = EXCLUDED.expires_at, attempts = 0
+  `;
+}
+
+/**
+ * Verify a one-time code: must match, be unexpired, and under the attempt cap.
+ * Consumes the code on success; counts the attempt on failure.
+ */
+export async function verifyLoginCode(email: string, codeHash: string): Promise<boolean> {
+  const sql = getSql();
+  await ensureSchema();
+  const rows = await sql<{ code_hash: string; expires_at: Date; attempts: number }[]>`
+    SELECT code_hash, expires_at, attempts FROM login_codes WHERE email = ${email}
+  `;
+  const row = rows[0];
+  if (!row || row.attempts >= 5 || row.expires_at.getTime() < Date.now()) return false;
+  if (row.code_hash === codeHash) {
+    await sql`DELETE FROM login_codes WHERE email = ${email}`;
+    return true;
+  }
+  await sql`UPDATE login_codes SET attempts = attempts + 1 WHERE email = ${email}`;
+  return false;
 }
 
 /** Normalize a nickname for per-user uniqueness: trim, collapse spaces, lower. */

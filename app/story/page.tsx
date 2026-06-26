@@ -146,6 +146,7 @@ export default function Story() {
   const [emailed, setEmailed] = useState(true);
   const [roster, setRoster] = useState<RosterPerson[]>([]);
   const [personId, setPersonId] = useState<string | undefined>(undefined);
+  const [signedIn, setSignedIn] = useState(false);
 
   const name = answers.name.trim() || "this person";
 
@@ -221,6 +222,19 @@ export default function Story() {
       .catch(() => {});
   }, []);
 
+  // Am I already signed in? If so, the in-flow email/code step is skipped.
+  useEffect(() => {
+    fetch("/api/me")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.signedIn) {
+          setSignedIn(true);
+          if (typeof d.email === "string") setEmail(d.email);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const idx = FLOW.indexOf(screen);
   const progress =
     screen === "cover" || screen === "pick"
@@ -293,7 +307,8 @@ export default function Story() {
               options={OPTIONS[screen]}
               onPick={(v) => {
                 setAnswers((a) => ({ ...a, [screen]: v }));
-                go(nextOf(screen));
+                // Signed-in users skip the in-flow email/code step.
+                go(screen === "feeling" && signedIn ? "read" : nextOf(screen));
               }}
             />
           )}
@@ -320,7 +335,10 @@ export default function Story() {
               consent={consent}
               setEmail={setEmail}
               setConsent={setConsent}
-              onUnlock={() => go("read")}
+              onUnlock={() => {
+                setSignedIn(true);
+                go("read");
+              }}
             />
           )}
 
@@ -1028,9 +1046,50 @@ function EmailScreen({
   onUnlock: () => void;
 }) {
   const { display, done } = useTypewriter("Where should I send your read?");
-  const [touched, setTouched] = useState(false);
+  const [step, setStep] = useState<"email" | "code">("email");
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const ready = valid && consent;
+
+  const sendCode = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/auth/otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Couldn't send a code.");
+      setStep("code");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't send a code.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirm = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/auth/otp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), code: code.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Invalid code.");
+      onUnlock();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invalid code.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <section className={styles.screen}>
@@ -1040,45 +1099,79 @@ function EmailScreen({
         </div>
         {done && (
           <p className={styles.subtext}>
-            Free &mdash; add your email to unlock {name}&rsquo;s read. You&rsquo;ll
-            see it here and get a copy in your inbox.
+            {step === "email"
+              ? `Free — add your email to unlock ${name}'s read. We'll send a quick code so it saves to you and remembers who you've read.`
+              : `Enter the 6-digit code we just emailed to ${email.trim()}.`}
           </p>
         )}
       </div>
       <div className={styles.spacer} />
       <div className={styles.footerActions}>
-        <input
-          className={styles.input}
-          type="email"
-          placeholder="you@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          onBlur={() => setTouched(true)}
-        />
-        {touched && !valid && (
+        {step === "email" ? (
+          <>
+            <input
+              className={styles.input}
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            <label className={styles.consent}>
+              <input
+                type="checkbox"
+                checked={consent}
+                onChange={(e) => setConsent(e.target.checked)}
+              />
+              <span>
+                Email me my read and save it under my nickname. The conversation I
+                pasted is never stored.
+              </span>
+            </label>
+            <button
+              className={styles.primary}
+              style={{ marginTop: 12 }}
+              disabled={!ready || busy}
+              onClick={sendCode}
+            >
+              {busy ? "Sending…" : "Send me a code"}
+            </button>
+          </>
+        ) : (
+          <>
+            <input
+              className={styles.input}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="123456"
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            />
+            <button
+              className={styles.primary}
+              style={{ marginTop: 12 }}
+              disabled={code.length !== 6 || busy}
+              onClick={confirm}
+            >
+              {busy ? "Confirming…" : "Confirm & see my read"}
+            </button>
+            <button
+              className={styles.ghost}
+              style={{ display: "block", width: "100%", marginTop: 8 }}
+              onClick={() => {
+                setStep("email");
+                setCode("");
+                setError("");
+              }}
+            >
+              Use a different email
+            </button>
+          </>
+        )}
+        {error && (
           <p className={styles.subtext} style={{ color: "var(--red)", marginTop: 8 }}>
-            That doesn&rsquo;t look like a valid email.
+            {error}
           </p>
         )}
-        <label className={styles.consent}>
-          <input
-            type="checkbox"
-            checked={consent}
-            onChange={(e) => setConsent(e.target.checked)}
-          />
-          <span>
-            Email me my read and save it under my nickname. The conversation I
-            pasted is never stored.
-          </span>
-        </label>
-        <button
-          className={styles.primary}
-          style={{ marginTop: 12 }}
-          disabled={!ready}
-          onClick={onUnlock}
-        >
-          Unlock my read
-        </button>
       </div>
     </section>
   );

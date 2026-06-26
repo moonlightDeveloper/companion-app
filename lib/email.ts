@@ -66,6 +66,31 @@ export async function sendMagicLink(params: { to: string; url: string }): Promis
   if (error) throw new EmailError(error.message || "Resend send failed");
 }
 
+/** Send a one-time sign-in code. */
+export async function sendLoginCode(params: { to: string; code: string }): Promise<void> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) throw new EmailError("Missing RESEND_API_KEY");
+
+  const resend = new Resend(apiKey);
+  const from = process.env.RESEND_FROM || SANDBOX_FROM;
+  const code = esc(params.code);
+
+  const { error } = await resend.emails.send({
+    from,
+    to: params.to,
+    subject: `${params.code} is your Companion code`,
+    html: wrap(`
+      <h1 style="${H1}">Your sign-in code</h1>
+      <p style="${P}">Enter this code to confirm it's you. It expires in 10 minutes.</p>
+      <p style="font-size:30px;font-weight:700;letter-spacing:6px;color:#3a2f2c;margin:14px 0;">${code}</p>
+      <p style="${P}">If you didn't request this, you can ignore it.</p>
+    `),
+    text: `Your Companion sign-in code is ${params.code}. It expires in 10 minutes.\nIf you didn't request this, ignore it.`,
+  });
+
+  if (error) throw new EmailError(error.message || "Resend send failed");
+}
+
 function deleteUrl(): string {
   const base = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   return `${base.replace(/\/$/, "")}/delete`;

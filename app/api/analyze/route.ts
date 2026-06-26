@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { Intake } from "@/types";
 import { analyze, AnalyzeError } from "@/lib/analyze";
 import { saveRead, getOrCreatePerson, createReport, personOwnedBy } from "@/lib/db";
-import { getUserId } from "@/lib/auth";
+import { getSession } from "@/lib/auth";
 import { sendReadEmail } from "@/lib/email";
 
 export const runtime = "nodejs";
@@ -22,15 +22,17 @@ export async function POST(request: Request) {
     unknown
   >;
 
-  // Gate: a valid email + ticked consent is required before we read anything.
-  const email = typeof b.email === "string" ? b.email.trim() : "";
+  // A signed-in session is the source of truth for who this is; the email it
+  // carries is implied consent. Anonymous callers must supply email + consent.
+  const session = await getSession();
+  const email = session?.email || (typeof b.email === "string" ? b.email.trim() : "");
   if (!EMAIL_RE.test(email)) {
     return NextResponse.json(
       { error: "Please enter a valid email address." },
       { status: 400 },
     );
   }
-  if (b.consent !== true) {
+  if (!session && b.consent !== true) {
     return NextResponse.json(
       { error: "Please tick consent so we can email and save your read." },
       { status: 400 },
@@ -69,7 +71,7 @@ export async function POST(request: Request) {
   const nickname = intake.name || "this person";
   let personId: string | undefined;
   let reportId: string | undefined;
-  const userId = await getUserId();
+  const userId = session?.userId ?? null;
   if (userId) {
     try {
       // If the user picked an existing person, attach to it (after verifying
