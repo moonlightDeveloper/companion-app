@@ -231,7 +231,11 @@ export default function Story() {
       setExtractStatus("running");
       setExtractError("");
       setReviewMessages(null);
-      const t = window.setTimeout(() => ctrl.abort(), 25000);
+      // FLAG-25: 60s, not 25s — extraction is backgrounded behind the intake
+      // questions, so a longer cap costs no foreground wait, and dense real
+      // multi-image chats (output-token bound) legitimately exceed 25s. The
+      // paste-text fallback still catches anything genuinely hung.
+      const t = window.setTimeout(() => ctrl.abort(), 60000);
       (async () => {
         try {
           const res = await fetch("/api/extract", {
