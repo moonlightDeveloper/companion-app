@@ -156,6 +156,8 @@ export default function Story() {
   const [clarifyAns, setClarifyAns] = useState<string[]>([]);
   const [clarifyLoading, setClarifyLoading] = useState(false);
   const bgReadRef = useRef<{ conv: string; promise: Promise<Read> } | null>(null);
+  const savedRef = useRef<{ personId?: string; reportId?: string }>({});
+  const [regenCount, setRegenCount] = useState(0);
   const [personReports, setPersonReports] = useState<ClientReport[]>([]);
   const [pattern, setPattern] = useState<string | null>(null);
   const [selectedReport, setSelectedReport] = useState<ClientReport | null>(null);
@@ -251,12 +253,21 @@ export default function Story() {
       fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ read, name: answers.name, email, consent, personId }),
+        body: JSON.stringify({
+          read,
+          name: answers.name,
+          email,
+          consent,
+          // Update the same report on a backstop regen; create on first save.
+          personId: savedRef.current.personId ?? personId,
+          reportId: savedRef.current.reportId,
+        }),
       })
         .then((r) => r.json())
         .then((data) => {
           setEmailed(data?.emailed !== false);
           if (data?.personId && data?.reportId) {
+            savedRef.current = { personId: data.personId, reportId: data.reportId };
             saveConversation({
               personId: data.personId,
               reportId: data.reportId,
@@ -477,6 +488,9 @@ export default function Story() {
               value={answers.conversation}
               onContinue={(v) => {
                 setAnswers((a) => ({ ...a, conversation: v }));
+                // New read → fresh save (don't update a previous report) + reset regens.
+                savedRef.current = {};
+                setRegenCount(0);
                 // Safe-B-lite: start generating the read now, in the background.
                 startBgRead(v, { ...answers, conversation: v });
                 // "New report" on a known person skips the rest of the context
@@ -528,6 +542,13 @@ export default function Story() {
               error={error}
               emailed={emailed}
               conversation={answers.conversation}
+              canFix={regenCount < 2}
+              onFix={(text) => {
+                setAnswers((a) => ({ ...a, conversation: text }));
+                setRegenCount((n) => n + 1);
+                bgReadRef.current = null;
+                setStatus("idle"); // re-trigger produceRead → updates the same report
+              }}
               onRetry={produceRead}
             />
           )}
@@ -946,13 +967,20 @@ function PasteShots({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Couldn't read those.");
-      setMessages(data.messages as TranscriptMessage[]);
-      setStage("review");
+      const msgs = data.messages as TranscriptMessage[];
+      setMessages(msgs);
+      // FLAG-20: show the check screen only when extraction is clearly shaky;
+      // a clean extraction flows straight through (no blanket wall).
+      if (data.needsCheck) {
+        setStage("review");
+      } else {
+        onConfirm(msgs.map((m) => `${m.speaker}: ${m.text}`).join("\n"));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't read those.");
       setStage("pick");
     }
-  }, [images, name]);
+  }, [images, name, onConfirm]);
 
   if (stage === "extracting") {
     return (
@@ -1574,6 +1602,8 @@ function ReadScreen({
   error,
   emailed,
   conversation,
+  canFix,
+  onFix,
   onRetry,
 }: {
   name: string;
@@ -1582,6 +1612,8 @@ function ReadScreen({
   error: string;
   emailed: boolean;
   conversation: string;
+  canFix: boolean;
+  onFix: (text: string) => void;
   onRetry: () => void;
 }) {
   if (status === "loading" || status === "idle") {
@@ -1680,6 +1712,11 @@ function ReadScreen({
       {/* Reply help only exists while the conversation is in hand right now. */}
       {conversation.trim() && <ReplyHelper name={name} conversation={conversation} />}
 
+      {/* Backstop: catch a confident misread (esp. wrong-side attribution). */}
+      {canFix && conversation.trim() && (
+        <FixBackstop conversation={conversation} onFix={onFix} />
+      )}
+
       <div className={styles.footerActions}>
         <Link href="/" className={styles.secondary} style={{ display: "block", textAlign: "center" }}>
           Done for now
@@ -1723,6 +1760,52 @@ function ReadBody({ read }: { read: Read }) {
         )}
       </div>
     </>
+  );
+}
+
+function FixBackstop({
+  conversation,
+  onFix,
+}: {
+  conversation: string;
+  onFix: (text: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState(conversation);
+
+  if (!open) {
+    return (
+      <button
+        className={styles.secondary}
+        style={{ display: "block", width: "100%", marginTop: 12 }}
+        onClick={() => setOpen(true)}
+      >
+        Something look off, or is anyone&rsquo;s message on the wrong side?
+      </button>
+    );
+  }
+  return (
+    <div className={styles.insight} style={{ marginTop: 12 }}>
+      <div className={styles.k}>Fix the messages</div>
+      <p className={styles.subtext} style={{ marginTop: 0 }}>
+        Edit the wording, or move a line to the right speaker
+        (&ldquo;You:&rdquo; vs the nickname) &mdash; then I&rsquo;ll read it again.
+      </p>
+      <textarea
+        className={styles.textarea}
+        style={{ minHeight: 120 }}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      <button
+        className={styles.primary}
+        style={{ marginTop: 10 }}
+        disabled={!text.trim()}
+        onClick={() => onFix(text.trim())}
+      >
+        Read it again
+      </button>
+    </div>
   );
 }
 

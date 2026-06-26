@@ -190,6 +190,23 @@ export async function createReport(params: {
   return rows[0].id;
 }
 
+/** Replace a report's result in place (ownership-checked). Returns true if updated. */
+export async function updateReport(
+  userId: string,
+  reportId: string,
+  result: Read,
+): Promise<boolean> {
+  const sql = getSql();
+  await ensureSchema();
+  const rows = await sql`
+    UPDATE reports SET result = ${sql.json(result as never)}
+    WHERE id = ${reportId}
+      AND person_id IN (SELECT id FROM persons WHERE user_id = ${userId})
+    RETURNING id
+  `;
+  return rows.length > 0;
+}
+
 export interface StoredReport {
   id: string;
   result: Read;

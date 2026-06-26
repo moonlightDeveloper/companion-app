@@ -36,7 +36,7 @@ per-person history of those reads.
 `index.html` and `app.html` at the root are the design source of truth —
 preserve them; port from them, don't delete them.
 
-**What exists today (shipped, FLAG-1 → FLAG-19):**
+**What exists today (shipped, FLAG-1 → FLAG-20):**
 
 - The guided `/story` flow: one-question-at-a-time intake → paste or upload
   screenshots (Claude vision → ordered transcript) → a live behaviour read.
@@ -63,6 +63,9 @@ preserve them; port from them, don't delete them.
 - Background read / Safe-B-lite (FLAG-19, §2.12): the read is generated in the
   background once the conversation's in hand, so the wait overlaps the remaining
   questions and the read just appears whole.
+- Confidence-gated transcript check (FLAG-20, §2.13): the blanket review wall is
+  replaced by a check screen only when extraction is shaky, plus an always-on
+  "fix the messages" backstop with the read.
 
 **Planned (designed, not yet built):**
 
@@ -143,7 +146,7 @@ The engineering reference behind the "saved people / private history / replies"
 work. Shipped: FLAG-8 (magic-link sign-in), FLAG-9 (saved people), FLAG-10
 (on-device conversations), FLAG-11 (pick-or-create), FLAG-12 (reply help),
 FLAG-13 (inline OTP sign-in), FLAG-14 (per-person history & pattern over time),
-FLAG-15 (storage-shape cleanup), FLAG-16 (evidence scrub), FLAG-17 (voice, §2.10), FLAG-18 (pre-read clarification, §2.11), FLAG-19 (background read, §2.12). Designed, not yet
+FLAG-15 (storage-shape cleanup), FLAG-16 (evidence scrub), FLAG-17 (voice, §2.10), FLAG-18 (pre-read clarification, §2.11), FLAG-19 (background read, §2.12), FLAG-20 (confidence-gated check + backstop, §2.13). Designed, not yet
 built: soft identity (§2.8), language & cultural context (§2.9).
 
 **Identity (decided):** passwordless email magic-link / OTP via Resend. User key
@@ -370,6 +373,30 @@ stack an interview). Hard cap 2, no follow-up tree.
   can't leak a place/employer into the stored read.
 - **Never blocks.** Any failure, or skipping everything, still yields a
   calibrated read — clarify is a sharpener, never a gate.
+
+### §2.13 Confidence-gated transcript check + after-read backstop (shipped — FLAG-20)
+
+The blanket transcript-review wall (FLAG-7) is gone. Two targeted layers instead:
+
+- **Gate:** extraction reports a `confidence` signal; the check screen shows **only**
+  when `needsCheck = (confidence.level==="low" && issues≥1) OR attributionFail
+  (all-one-speaker, ≥3 msgs) OR tooThin (≤1 msg from ≥2 images)`. **Biased to let
+  reads through** — clean extractions flow straight into Safe-B-lite (§2.12).
+  **Extraction always runs** even when no screen shows (the backstop needs the
+  transcript).
+- **Backstop:** an always-on calm *"Something look off, or is anyone's message on
+  the wrong side?"* with the read → edit the transcript → regenerate. Reuses the
+  analyze path (FLAG-16/§2.2/§2.10), conversation stays IndexedDB-only, and it
+  **updates the same report in place** (`updateReport`) so only the final read is
+  stored. **Capped at 2 regens.**
+
+**Post-launch watch (don't over-tune now):** the gate is proven on the *extremes*
+— clean chat passes, non-chat garbage trips — but **not** on blurry/cropped/low-res
+**real** chats (bubbles present but unreliable); that middle is covered by
+biased-to-pass + the backstop by design. If real users frequently use the backstop
+to fix blurry-real-chat reads the gate should have caught, that's the signal the
+low-confidence self-report isn't sensitive enough to real-chat degradation →
+**tighten the threshold then, against real examples**, not now on synthetic cases.
 
 ## Invariants (hard rules — don't break these)
 

@@ -66,7 +66,19 @@ export async function POST(request: Request) {
         { status: 422 },
       );
     }
-    return NextResponse.json(transcript);
+
+    // needsCheck (FLAG-20): show the check screen ONLY when extraction is
+    // clearly unreliable. Biased to let reads through — the after-read backstop
+    // covers the messy middle. Model self-report + two structural heuristics.
+    const msgs = transcript.messages;
+    const conf = transcript.confidence ?? { level: "high", issues: [] };
+    const distinctSpeakers = new Set(msgs.map((m) => (m.speaker === "You" ? "You" : "them"))).size;
+    const attributionFail = msgs.length >= 3 && distinctSpeakers <= 1;
+    const tooThin = images.length >= 2 && msgs.length <= 1;
+    const needsCheck =
+      (conf.level === "low" && conf.issues.length >= 1) || attributionFail || tooThin;
+
+    return NextResponse.json({ ...transcript, needsCheck });
   } catch (err) {
     if (err instanceof ExtractError && err.message === "Missing ANTHROPIC_API_KEY") {
       console.error("ANTHROPIC_API_KEY is not configured");
