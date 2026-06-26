@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { extractTranscript, ExtractError, type InputImage } from "@/lib/extract";
 
 export const runtime = "nodejs";
+// FLAG-25: give the vision call headroom above the client's 60s abort so the
+// function never times out before the client does (no raw 504s; the client
+// controls the UX). Default Vercel maxDuration can be lower than the dense-chat
+// extraction tail.
+export const maxDuration = 90;
 
 const MAX_IMAGES = 6;
 const ALLOWED: InputImage["media_type"][] = [
