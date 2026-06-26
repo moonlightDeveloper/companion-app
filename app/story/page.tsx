@@ -21,6 +21,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { Intake, Read, TranscriptMessage } from "@/types";
+import { saveConversation, evictExpired } from "@/lib/localConversations";
 import styles from "./story.module.css";
 
 type Screen =
@@ -169,10 +170,21 @@ export default function Story() {
       if (!res.ok) {
         throw new Error(data?.error || "Something went wrong.");
       }
-      const { emailed: sent, ...rest } = data as Read & { emailed?: boolean };
+      const { emailed: sent, personId, reportId, ...rest } = data as Read & {
+        emailed?: boolean;
+        personId?: string;
+        reportId?: string;
+      };
       setEmailed(sent !== false);
       setRead(rest as Read);
       setStatus("done");
+      // Create order: the read is saved server-side first; only then does the
+      // raw conversation land on-device, tagged with the returned ids.
+      if (personId && reportId) {
+        saveConversation({ personId, reportId, text: answers.conversation }).catch(
+          () => {},
+        );
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setStatus("error");
@@ -185,6 +197,11 @@ export default function Story() {
       runAnalyze();
     }
   }, [screen, status, runAnalyze]);
+
+  // Lazy eviction of expired on-device conversations on app-open (§2.1).
+  useEffect(() => {
+    evictExpired();
+  }, []);
 
   const idx = FLOW.indexOf(screen);
   const progress =
