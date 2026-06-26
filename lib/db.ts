@@ -119,6 +119,16 @@ export async function getOrCreatePerson(params: {
   return rows[0].id;
 }
 
+/** True if this person exists and belongs to this user. */
+export async function personOwnedBy(userId: string, personId: string): Promise<boolean> {
+  const sql = getSql();
+  await ensureSchema();
+  const rows = await sql`
+    SELECT 1 FROM persons WHERE id = ${personId} AND user_id = ${userId} LIMIT 1
+  `;
+  return rows.length > 0;
+}
+
 /** Save a read as a report under a person. Result only — never the conversation. */
 export async function createReport(params: {
   personId: string;
