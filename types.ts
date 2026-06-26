@@ -62,6 +62,8 @@ export interface Transcript {
   messages: TranscriptMessage[];
   notes?: string;
   confidence?: ExtractConfidence;
+  /** True only when the image clearly isn't a messaging conversation (FLAG-21). */
+  notAChat?: boolean;
 }
 
 /** One editable reply draft in a given tone (from /api/reply). */

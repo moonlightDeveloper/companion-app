@@ -57,6 +57,17 @@ export async function POST(request: Request) {
     // Images and the resulting transcript are used here only and never stored
     // or logged — the image data above is deliberately never written anywhere.
     const transcript = await extractTranscript(images, nickname);
+    // Stage 2 (FLAG-21): hard-bounce a confident non-chat. Thin/one-sided real
+    // chats are NOT bounced — they fall to the soft path below.
+    if (transcript.notAChat) {
+      return NextResponse.json(
+        {
+          error: "That doesn't look like a chat — upload the conversation screenshot.",
+          bounce: true,
+        },
+        { status: 422 },
+      );
+    }
     if (transcript.messages.length === 0) {
       return NextResponse.json(
         {

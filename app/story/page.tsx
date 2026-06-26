@@ -934,13 +934,33 @@ function PasteShots({
     setError("");
     const room = MAX_IMAGES - images.length;
     const picked = Array.from(files).slice(0, Math.max(0, room));
-    const converted = (await Promise.all(picked.map(downscaleToBase64))).filter(
-      (x): x is ShotImage => x !== null,
-    );
-    if (converted.length < picked.length) {
-      setError("Some files were skipped — images only.");
+    // Stage 1 (FLAG-21): validate format + size + decodability BEFORE any vision
+    // call. Specific, actionable message — never a generic "unsupported file".
+    const ACCEPTED = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+    const MAX_BYTES = 20 * 1024 * 1024; // 20 MB original-file guard
+    const out: ShotImage[] = [];
+    let err = "";
+    for (const f of picked) {
+      const type = (f.type || "").toLowerCase();
+      if (!ACCEPTED.includes(type)) {
+        err = /heic|heif/i.test(type + " " + f.name)
+          ? "HEIC isn't supported — export it as JPG and try again."
+          : "That's not an image we can read — use a PNG or JPG screenshot.";
+        continue;
+      }
+      if (f.size > MAX_BYTES) {
+        err = "That file's too large — keep the original under 20 MB.";
+        continue;
+      }
+      const img = await downscaleToBase64(f);
+      if (!img) {
+        err = "Couldn't read that file — try another screenshot.";
+        continue;
+      }
+      out.push(img);
     }
-    setImages((prev) => [...prev, ...converted]);
+    if (err) setError(err);
+    if (out.length) setImages((prev) => [...prev, ...out]);
   }, [images.length]);
 
   const onDragEnd = (e: DragEndEvent) => {
@@ -1712,9 +1732,14 @@ function ReadScreen({
       {/* Reply help only exists while the conversation is in hand right now. */}
       {conversation.trim() && <ReplyHelper name={name} conversation={conversation} />}
 
-      {/* Backstop: catch a confident misread (esp. wrong-side attribution). */}
+      {/* Backstop: catch a confident misread (wrong-side attribution) or enrich
+          voice-message gaps. */}
       {canFix && conversation.trim() && (
-        <FixBackstop conversation={conversation} onFix={onFix} />
+        <FixBackstop
+          conversation={conversation}
+          voice={conversation.includes("[voice message]")}
+          onFix={onFix}
+        />
       )}
 
       <div className={styles.footerActions}>
@@ -1765,9 +1790,11 @@ function ReadBody({ read }: { read: Read }) {
 
 function FixBackstop({
   conversation,
+  voice,
   onFix,
 }: {
   conversation: string;
+  voice: boolean;
   onFix: (text: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -1780,16 +1807,19 @@ function FixBackstop({
         style={{ display: "block", width: "100%", marginTop: 12 }}
         onClick={() => setOpen(true)}
       >
-        Something look off, or is anyone&rsquo;s message on the wrong side?
+        {voice
+          ? "Want to add what the voice notes were about? It'll sharpen this."
+          : "Something look off, or is anyone’s message on the wrong side?"}
       </button>
     );
   }
   return (
     <div className={styles.insight} style={{ marginTop: 12 }}>
-      <div className={styles.k}>Fix the messages</div>
+      <div className={styles.k}>{voice ? "Add what the voice notes were about" : "Fix the messages"}</div>
       <p className={styles.subtext} style={{ marginTop: 0 }}>
-        Edit the wording, or move a line to the right speaker
-        (&ldquo;You:&rdquo; vs the nickname) &mdash; then I&rsquo;ll read it again.
+        {voice
+          ? "Replace the “[voice message]” lines with what was actually said — just the facts. Then I’ll read it again."
+          : "Edit the wording, or move a line to the right speaker (“You:” vs the nickname) — then I’ll read it again."}
       </p>
       <textarea
         className={styles.textarea}

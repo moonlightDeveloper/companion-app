@@ -36,7 +36,7 @@ per-person history of those reads.
 `index.html` and `app.html` at the root are the design source of truth —
 preserve them; port from them, don't delete them.
 
-**What exists today (shipped, FLAG-1 → FLAG-20):**
+**What exists today (shipped, FLAG-1 → FLAG-21):**
 
 - The guided `/story` flow: one-question-at-a-time intake → paste or upload
   screenshots (Claude vision → ordered transcript) → a live behaviour read.
@@ -146,7 +146,7 @@ The engineering reference behind the "saved people / private history / replies"
 work. Shipped: FLAG-8 (magic-link sign-in), FLAG-9 (saved people), FLAG-10
 (on-device conversations), FLAG-11 (pick-or-create), FLAG-12 (reply help),
 FLAG-13 (inline OTP sign-in), FLAG-14 (per-person history & pattern over time),
-FLAG-15 (storage-shape cleanup), FLAG-16 (evidence scrub), FLAG-17 (voice, §2.10), FLAG-18 (pre-read clarification, §2.11), FLAG-19 (background read, §2.12), FLAG-20 (confidence-gated check + backstop, §2.13). Designed, not yet
+FLAG-15 (storage-shape cleanup), FLAG-16 (evidence scrub), FLAG-17 (voice, §2.10), FLAG-18 (pre-read clarification, §2.11), FLAG-19 (background read, §2.12), FLAG-20 (confidence-gated check + backstop, §2.13), FLAG-21 (input validation + voice, §2.14). Designed, not yet
 built: soft identity (§2.8), language & cultural context (§2.9).
 
 **Identity (decided):** passwordless email magic-link / OTP via Resend. User key
@@ -397,6 +397,24 @@ biased-to-pass + the backstop by design. If real users frequently use the backst
 to fix blurry-real-chat reads the gate should have caught, that's the signal the
 low-confidence self-report isn't sensitive enough to real-chat degradation →
 **tighten the threshold then, against real examples**, not now on synthetic cases.
+
+### §2.14 Input validation + voice messages (shipped — FLAG-21)
+
+Hardens upload around FLAG-20. **Hard-bounce only the truly unusable; never trap a
+user whose only screenshot is imperfect.**
+
+- **Stage 1 — format/size, client-side, before any vision call** (`PasteShots.addFiles`):
+  accept `png/jpeg/webp/gif`; reject HEIC/PDF/video/unknown and originals **> 20 MB**
+  (UX guard — we downscale, so the engine's 5 MB/image limit is never binding), plus
+  corrupt/undecodable. Specific actionable messages; stays on upload; no wasted call.
+- **Stage 2 — confident non-chat bounce:** extraction emits `notAChat` (set **only**
+  when the image clearly isn't a messaging interface — settings/photo/call/document).
+  `notAChat` → hard bounce. **Thin/one-sided/blurry real chats are NOT bounced** —
+  `tooThin`/`attributionFail` stay the soft path (§2.13).
+- **Stage 3 — voice messages:** extraction renders voice bubbles as `[voice message]`
+  lines; the read calibrates partial (§2.2) and **never blocks**. After the read, the
+  FLAG-20 backstop offers to add **what they were about (facts only, §2.10)** →
+  regenerate (FLAG-16 scrub, IndexedDB-only, same 2-regen cap).
 
 ## Invariants (hard rules — don't break these)
 
