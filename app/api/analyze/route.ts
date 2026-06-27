@@ -14,6 +14,9 @@ import {
 import { sendReadEmail } from "@/lib/email";
 
 export const runtime = "nodejs";
+// FLAG-35: give the function room above the client's 40s read abort so prod
+// never 504s before the client's own timeout governs the UX.
+export const maxDuration = 60;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
