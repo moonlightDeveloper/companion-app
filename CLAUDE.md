@@ -36,7 +36,7 @@ per-person history of those reads.
 `index.html` and `app.html` at the root are the design source of truth —
 preserve them; port from them, don't delete them.
 
-**What exists today (shipped, FLAG-1 → FLAG-22):**
+**What exists today (shipped, FLAG-1 → FLAG-30):**
 
 - The guided `/story` flow: one-question-at-a-time intake → paste or upload
   screenshots (Claude vision → ordered transcript) → a live behaviour read.
@@ -71,6 +71,32 @@ preserve them; port from them, don't delete them.
   recognized (soft token + matching email) and routed into the app; the first
   read stays anonymous and code-free (the OTP gate is gone). Cross-device stays
   the optional magic-link upgrade.
+- Input validation + voice messages (FLAG-21, §2.14): client-side format/size
+  bounce before any vision call; a confident non-chat bounce; voice bubbles
+  render as `[voice message]` and the read calibrates partial.
+- Background upload + extraction (FLAG-23): extraction runs in the **background**
+  while the user answers intake (extends Safe-B-lite one stage earlier). Hard
+  failures (notAChat / empty / timeout) interrupt the flow wherever the user is;
+  a needsCheck verification waits until the transcript is consumed (at clarify).
+- Per-path model wrapper (FLAG-24): `lib/models.ts` maps each Claude call to its
+  model (`modelFor(path)` over STRONG/FAST + per-path `MODEL_<PATH>` overrides).
+  Extraction was gated for a fast model, but Haiku **failed the accuracy parity
+  test** on dense real chats (ordering scramble, message drift) → extraction
+  stays on the strong model. The wrapper makes it a one-line `MODEL_EXTRACT` swap
+  if a fast *and* accurate extraction model appears — re-gated on real
+  screenshots, never synthetic.
+- Extraction robustness (FLAG-25/FLAG-26): 60s client abort + `maxDuration` on
+  the extract route; and **forced tool-use** — extraction pins a schema'd
+  `emit_transcript` tool via `tool_choice`, so the SDK returns guaranteed-valid
+  structured args. This fixed a ~50% dense-upload failure where the model
+  prepended prose and the old free-text JSON parse choked. The brittle
+  `parseJson` is gone — do NOT reintroduce free-text JSON parsing for extraction.
+- Upload cap + over-limit UX (FLAG-27 → FLAG-30): an 8-image cap whose single
+  source of truth is `MAX_IMAGES` in `lib/cap.ts` (imported by client AND the
+  extract route — they diverged once, the "6 vs 8" bug); per-image delete;
+  desktop drag-drop and the picker share one validation path. Over-limit keeps
+  ALL images (nothing silently dropped), dims the extras (index ≥ MAX_IMAGES),
+  shows a red instruction banner, and disables Continue until trimmed.
 
 **Planned (designed, not yet built):**
 
@@ -100,7 +126,7 @@ or every route 404s (dev server chokes on a production `.next`).
   pick-or-create entry, per-person overview/history, and reply help (ported from `app.html`)
 - `app/signin/page.tsx` — magic-link sign-in; `app/delete/page.tsx` — delete-my-data
 - `app/api/analyze` → `lib/analyze.ts` — the read (Claude → JSON); 3 modes: preview (generate-only), save (persist a previewed read), legacy (§2.12)
-- `app/api/extract` → `lib/extract.ts` — screenshots → ordered transcript (Claude vision)
+- `app/api/extract` → `lib/extract.ts` — screenshots → ordered transcript (Claude vision, **forced tool-use** FLAG-26)
 - `app/api/reply` → `lib/reply.ts` — 2–3 reply drafts (Claude)
 - `app/api/auth/{request,verify,signout}` → `lib/auth.ts` — magic-link + session
 - `app/api/auth/otp` + `app/api/auth/otp/verify` → `lib/auth.ts` + `lib/db.ts` — inline OTP sign-in
@@ -111,6 +137,8 @@ or every route 404s (dev server chokes on a production `.next`).
 - `lib/db.ts` — Postgres (`users/persons/reports/reads/login_codes`); `lib/email.ts` —
   Resend (`sendReadEmail`, `sendMagicLink`, `sendLoginCode`); `lib/localConversations.ts` —
   IndexedDB; `lib/prompt.ts` — read prompt; `lib/pattern.ts` — pattern-insight synthesis
+- `lib/models.ts` — per-path model selection `modelFor(path)` (FLAG-24); `lib/cap.ts` —
+  the `MAX_IMAGES` upload cap, single source of truth shared by client + extract route (FLAG-28)
 - `types.ts` — shared types (`Read`, `Intake`, `Transcript`, `ReplyDraft`, …)
 - `scripts/migrate-double-encoded.mjs` — one-time jsonb normalization (FLAG-15)
 
@@ -120,17 +148,23 @@ can't crash the UI. Add new fields there, not just in the prompt.
 ## AI
 
 - Claude via the official `@anthropic-ai/sdk`, server-side only.
-- Default model `claude-sonnet-4-6`; override with the `MODEL` env var. Note:
-  `MODEL` is currently a single global — all Claude calls (read, extract, reply,
-  pattern) use it. Per-path model selection would need a thin wrapper (not built).
-- Model selection by path. Sonnet 4.6 is the cost-balanced default. The
-  nuance-critical paths (the read, the reply, the pattern insight) benefit from
-  a stronger model — set `MODEL` (e.g. `claude-opus-4-8`) if quality warrants.
-  Select for instruction-following + low sycophancy, not maximum "empathy": a
+- **Per-path model selection (FLAG-24, `lib/models.ts`).** Each call site picks
+  its model via `modelFor(path)` — never a raw env read. `MODEL` sets the STRONG
+  default (`claude-sonnet-4-6`), `MODEL_FAST` the fast default, and per-path
+  `MODEL_<PATH>` (e.g. `MODEL_EXTRACT`) overrides any one path. Today read /
+  reply / pattern / clarify / extract all resolve to STRONG; extract is mapped to
+  STRONG because Haiku failed the accuracy gate (see the FLAG-24 note above).
+- Choose for instruction-following + low sycophancy, not maximum "empathy": a
   model that's too warm/agreeable will reassure the user instead of giving the
-  honest read, which is the exact failure this product exists to avoid. Keep
-  model use behind the env var / a thin wrapper so providers are swappable — the
-  frontier shifts monthly.
+  honest read, which is the exact failure this product exists to avoid. A
+  stronger `MODEL` (e.g. `claude-opus-4-8`) is fine if quality warrants. Keep
+  model use behind `modelFor` so providers are swappable — the frontier shifts.
+- **Extraction uses forced tool-use** (`lib/extract.ts`): a schema'd
+  `emit_transcript` tool pinned via `tool_choice`, so the model returns
+  guaranteed-valid structured args (no prose, no free-text JSON parsing). The
+  FLAG-20/21 signals (`confidence`, `notAChat`, voice `[voice message]`) live in
+  that tool schema; `max_tokens` is generous (8000) as a secondary guard only.
+  Do not reintroduce regex/JSON-string parsing — it failed ~50% on dense chats.
 - The app reads behaviour, not feelings or an interest percentage. Keep that
   framing in prompts and copy.
 
@@ -140,8 +174,8 @@ The engineering reference behind the "saved people / private history / replies"
 work. Shipped: FLAG-8 (magic-link sign-in), FLAG-9 (saved people), FLAG-10
 (on-device conversations), FLAG-11 (pick-or-create), FLAG-12 (reply help),
 FLAG-13 (inline OTP sign-in), FLAG-14 (per-person history & pattern over time),
-FLAG-15 (storage-shape cleanup), FLAG-16 (evidence scrub), FLAG-17 (voice, §2.10), FLAG-18 (pre-read clarification, §2.11), FLAG-19 (background read, §2.12), FLAG-20 (confidence-gated check + backstop, §2.13), FLAG-21 (input validation + voice, §2.14), FLAG-22 (soft identity, §2.8). Designed, not yet
-built: soft identity (§2.8), language & cultural context (§2.9).
+FLAG-15 (storage-shape cleanup), FLAG-16 (evidence scrub), FLAG-17 (voice, §2.10), FLAG-18 (pre-read clarification, §2.11), FLAG-19 (background read, §2.12), FLAG-20 (confidence-gated check + backstop, §2.13), FLAG-21 (input validation + voice, §2.14), FLAG-22 (soft identity, §2.8), FLAG-23 (background extraction), FLAG-24 (per-path model wrapper), FLAG-25/26 (extraction robustness: timeout cap + forced tool-use), FLAG-27→30 (upload cap + delete + drag-drop + over-limit UX). Designed, not yet
+built: language & cultural context (§2.9).
 
 **Identity (decided):** passwordless email magic-link / OTP via Resend. User key
 is a UUID `userId`; `email` is a `UNIQUE NOT NULL` attribute, never the primary
@@ -349,6 +383,15 @@ preview, save, legacy (generate+save+email).
   a negligible delta; the read is transcript-dominated. Only the final read is
   stored; conversation stays IndexedDB-only; FLAG-16 scrub + §2.2/§2.10 intact.
 
+**Background extraction (FLAG-23) extends this one stage earlier.** Upload +
+extraction also run in the **background** — kicked off when screenshots are
+confirmed, while the user answers intake — then the read background chains off
+the finished transcript. Hard extraction failures (notAChat / empty / 25→60s
+timeout) interrupt the flow wherever the user is, with the FLAG-21 copy + a
+retry/paste fallback; a `needsCheck` verification is *not* a failure and waits
+until the transcript is consumed (at clarify). Intake answers survive a
+failure → re-upload → resume.
+
 ### §2.11 Pre-read clarification (shipped — FLAG-18)
 
 Before the read, a short pass inspects the conversation and asks **0–2 skippable
@@ -426,6 +469,12 @@ user whose only screenshot is imperfect.**
   delete-my-data link.
 - Email/DB are non-blocking: a mail or save failure must never hide or break the
   on-screen read.
+- Extraction must return guaranteed-valid JSON via forced tool-use (`tool_choice`
+  → `emit_transcript`, `lib/extract.ts`). Do NOT reintroduce free-text JSON /
+  regex parsing — it failed ~50% on dense real chats (the model prepends prose).
+- The image-upload limit has ONE source of truth: `MAX_IMAGES` in `lib/cap.ts`,
+  imported by both the client and the extract route. Never hardcode a count
+  (6/8/…) anywhere — that divergence was the "6 vs 8" bug (FLAG-28).
 
 ## Git / PR / Jira workflow
 
