@@ -22,7 +22,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { Intake, Read, ReplyDraft, TranscriptMessage } from "@/types";
 import { saveConversation, evictExpired, getConversation } from "@/lib/localConversations";
-import { capFiles } from "@/lib/cap";
+import { capFiles, MAX_IMAGES } from "@/lib/cap";
 import styles from "./story.module.css";
 
 type Screen =
@@ -1113,8 +1113,6 @@ function PasteText({
 }
 
 type ShotImage = { id: string; dataUrl: string; media_type: string; data: string };
-const MAX_IMAGES = 8;
-
 function PasteShots({
   onBack,
   onConfirm,

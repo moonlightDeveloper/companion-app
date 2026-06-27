@@ -108,7 +108,7 @@ export async function extractTranscript(
   try {
     const response = await client.messages.create({
       model: modelFor("extract"),
-      // Headroom (FLAG-26 secondary guard): a dense 6-image transcript can run
+      // Headroom (FLAG-26 secondary guard): a dense multi-image transcript can run
       // ~2k+ output tokens; 2000 was a real ceiling. We only pay for tokens
       // actually generated, so the headroom is ~free.
       max_tokens: 8000,
