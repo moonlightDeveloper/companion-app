@@ -22,6 +22,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { Intake, Read, ReplyDraft, TranscriptMessage } from "@/types";
 import { saveConversation, evictExpired, getConversation } from "@/lib/localConversations";
+import { capFiles } from "@/lib/cap";
 import styles from "./story.module.css";
 
 type Screen =
@@ -1112,7 +1113,7 @@ function PasteText({
 }
 
 type ShotImage = { id: string; dataUrl: string; media_type: string; data: string };
-const MAX_IMAGES = 6;
+const MAX_IMAGES = 8;
 
 function PasteShots({
   onBack,
@@ -1123,6 +1124,10 @@ function PasteShots({
 }) {
   const [images, setImages] = useState<ShotImage[]>([]);
   const [error, setError] = useState("");
+  // FLAG-27: calm informational note (over-selection), distinct from the red error
+  // banner; and the drag-drop hover state.
+  const [notice, setNotice] = useState("");
+  const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Pointer + touch + keyboard reordering. A small activation distance lets the
@@ -1136,8 +1141,15 @@ function PasteShots({
   const addFiles = useCallback(async (files: FileList | null) => {
     if (!files) return;
     setError("");
+    setNotice("");
     const room = MAX_IMAGES - images.length;
-    const picked = Array.from(files).slice(0, Math.max(0, room));
+    const all = Array.from(files);
+    // FLAG-27: the cap is enforced HERE, at selection-completion, via the shared
+    // capFiles helper — so it holds IDENTICALLY for the file picker AND drag-drop
+    // (both reach this one function). Over-selection is a calm note, not an error.
+    const { kept: picked, notice: capNotice } = capFiles(all, room, MAX_IMAGES);
+    if (capNotice) setNotice(capNotice);
+    if (picked.length === 0) return;
     // Stage 1 (FLAG-21): validate format + size + decodability BEFORE any vision
     // call. Specific, actionable message — never a generic "unsupported file".
     const ACCEPTED = ["image/png", "image/jpeg", "image/webp", "image/gif"];
@@ -1189,52 +1201,75 @@ function PasteShots({
         onChange={(e) => addFiles(e.target.files)}
       />
 
-      {images.length === 0 ? (
-        <button className={styles.dropzone} onClick={() => fileRef.current?.click()}>
-          <b>Add screenshots</b>
-          <span>Up to {MAX_IMAGES} images · earliest first</span>
-        </button>
-      ) : (
-        <>
-          {images.length > 1 && (
+      {/* FLAG-27: one drop target over the whole media region. Dropped files go
+          through the SAME addFiles as the picker — same Stage-1 validation + cap. */}
+      <div
+        className={`${styles.dropArea}${dragOver ? ` ${styles.dropAreaOver}` : ""}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!dragOver) setDragOver(true);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          addFiles(e.dataTransfer.files);
+        }}
+      >
+        {images.length === 0 ? (
+          <button className={styles.dropzone} onClick={() => fileRef.current?.click()}>
+            <b>Add up to {MAX_IMAGES} screenshots</b>
+            <span>Tap to choose, or drag them here · earliest first</span>
+          </button>
+        ) : (
+          <>
             <p className={styles.subtext} style={{ marginBottom: 8 }}>
-              Drag to put them in order — earliest conversation first.
+              {images.length} of {MAX_IMAGES}
+              {images.length > 1 ? " · drag to reorder, earliest first" : ""}
             </p>
-          )}
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={onDragEnd}
-          >
-            <SortableContext
-              items={images.map((i) => i.id)}
-              strategy={rectSortingStrategy}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={onDragEnd}
             >
-              <div className={styles.thumbs}>
-                {images.map((img, i) => (
-                  <SortableThumb
-                    key={img.id}
-                    img={img}
-                    index={i}
-                    canReorder={images.length > 1}
-                    onRemove={() =>
-                      setImages((p) => p.filter((x) => x.id !== img.id))
-                    }
-                  />
-                ))}
-                {images.length < MAX_IMAGES && (
+              <SortableContext
+                items={images.map((i) => i.id)}
+                strategy={rectSortingStrategy}
+              >
+                <div className={styles.thumbs}>
+                  {images.map((img, i) => (
+                    <SortableThumb
+                      key={img.id}
+                      img={img}
+                      index={i}
+                      canReorder={images.length > 1}
+                      onRemove={() =>
+                        setImages((p) => p.filter((x) => x.id !== img.id))
+                      }
+                    />
+                  ))}
+                  {/* Greyed (disabled), not hidden, at the cap — communicates the
+                      limit; removing a ✕ drops the count and re-enables it. */}
                   <button
                     className={styles.thumbAdd}
                     onClick={() => fileRef.current?.click()}
+                    disabled={images.length >= MAX_IMAGES}
+                    aria-label={
+                      images.length >= MAX_IMAGES
+                        ? `Maximum ${MAX_IMAGES} screenshots reached`
+                        : "Add screenshot"
+                    }
                   >
                     +
                   </button>
-                )}
-              </div>
-            </SortableContext>
-          </DndContext>
-        </>
-      )}
+                </div>
+              </SortableContext>
+            </DndContext>
+          </>
+        )}
+      </div>
 
       {error && (
         <div className={styles.uploadError} role="alert">
@@ -1242,6 +1277,8 @@ function PasteShots({
           <span>{error}</span>
         </div>
       )}
+
+      {notice && <p className={styles.uploadNotice}>{notice}</p>}
 
       <div className={styles.footerActions}>
         <button

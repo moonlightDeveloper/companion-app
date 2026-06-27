@@ -351,7 +351,7 @@
 }
 .thumbs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
 .thumb {
@@ -416,6 +416,36 @@
   color: var(--accent);
   font-size: 26px;
   cursor: pointer;
+}
+/* FLAG-27: greyed, not hidden, at the cap — communicates the limit. */
+.thumbAdd:disabled {
+  color: var(--line);
+  background: #f6f3f1;
+  cursor: not-allowed;
+}
+
+/* FLAG-27: drop target wrapping the media region; both picker + drag-drop feed
+   the same addFiles. The over state is the visible "drop here" affordance. */
+.dropArea {
+  border: 1.5px dashed transparent;
+  border-radius: 22px;
+  transition: border-color 0.12s, background 0.12s;
+}
+.dropAreaOver {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, #fff);
+}
+
+/* FLAG-27: calm, informational note (over-selection) — NOT the red error banner. */
+.uploadNotice {
+  margin: 12px 0 4px;
+  padding: 10px 14px;
+  background: #f6f3f1;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--muted, #7a6b66);
+  font-size: 13.5px;
+  line-height: 1.45;
 }
 
 /* ---------- transcript review ---------- */
