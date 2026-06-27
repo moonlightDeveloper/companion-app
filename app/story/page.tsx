@@ -175,6 +175,9 @@ export default function Story() {
   const [pasteTextMode, setPasteTextMode] = useState(false);
   const extractAbortRef = useRef<AbortController | null>(null);
   const resumeToRef = useRef<Screen | null>(null);
+  // FLAG-34: the backgrounded history question (from-person only), resolved to
+  // the question string ("" if none). Kicked at "New report", consumed at clarify.
+  const historyQRef = useRef<Promise<string> | null>(null);
 
   const name = answers.name.trim() || "this person";
 
@@ -394,28 +397,32 @@ export default function Story() {
     let cancelled = false;
     setClarifyLoading(true);
     setClarifyQs([]);
-    fetch("/api/clarify", {
+
+    // FLAG-34: the backgrounded history question (from-person only) rides in
+    // FRONT of the generic clarify. Default is ONE question (the history one);
+    // the generic clarify adds a second ONLY when it genuinely finds a
+    // verdict-forking ambiguity — it's already biased hard toward returning [].
+    const historyP = (historyQRef.current ?? Promise.resolve("")).catch(() => "");
+    const genericP = fetch("/api/clarify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ conversation: answers.conversation, nickname: name }),
     })
       .then((r) => r.json())
-      .then((d) => {
-        if (cancelled) return;
-        const qs = Array.isArray(d?.questions) ? d.questions.slice(0, 2) : [];
-        setClarifyLoading(false);
-        if (qs.length === 0) {
-          go("read");
-        } else {
-          setClarifyQs(qs);
-          setClarifyAns(qs.map(() => ""));
-        }
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setClarifyLoading(false);
+      .then((d) => (Array.isArray(d?.questions) ? (d.questions as string[]) : []))
+      .catch(() => [] as string[]);
+
+    Promise.all([historyP, genericP]).then(([hq, generic]) => {
+      if (cancelled) return;
+      const qs = [...(hq ? [hq] : []), ...generic].slice(0, 2);
+      setClarifyLoading(false);
+      if (qs.length === 0) {
         go("read");
-      });
+      } else {
+        setClarifyQs(qs);
+        setClarifyAns(qs.map(() => ""));
+      }
+    });
     return () => {
       cancelled = true;
     };
@@ -530,6 +537,7 @@ export default function Story() {
               }}
               onNew={() => {
                 setPersonId(undefined);
+                historyQRef.current = null; // new person → no history question
                 go("name");
               }}
             />
@@ -545,6 +553,18 @@ export default function Story() {
                 setStatus("idle");
                 setRead(null);
                 setAnswers((a) => ({ ...a, conversation: "" }));
+                // FLAG-34: generate the personal history question now, in the
+                // background, so it's ready by clarify (overlaps upload/paste).
+                historyQRef.current = personId
+                  ? fetch("/api/history-question", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ personId, nickname: name }),
+                    })
+                      .then((r) => r.json())
+                      .then((d) => (typeof d?.question === "string" ? d.question : ""))
+                      .catch(() => "")
+                  : null;
                 go("paste");
               }}
               onSeePast={() => go("history")}
