@@ -22,7 +22,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { Intake, Read, ReplyDraft, TranscriptMessage } from "@/types";
 import { saveConversation, evictExpired, getConversation } from "@/lib/localConversations";
-import { capFiles, MAX_IMAGES } from "@/lib/cap";
+import { MAX_IMAGES } from "@/lib/cap";
 import styles from "./story.module.css";
 
 type Screen =
@@ -1122,11 +1122,13 @@ function PasteShots({
 }) {
   const [images, setImages] = useState<ShotImage[]>([]);
   const [error, setError] = useState("");
-  // FLAG-27: calm informational note (over-selection), distinct from the red error
-  // banner; and the drag-drop hover state.
-  const [notice, setNotice] = useState("");
+  // FLAG-27: the drag-drop hover state.
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // FLAG-29: over-selection is gated at Continue, not sliced at add. The count
+  // can exceed MAX_IMAGES; Continue stays disabled until the user trims back.
+  const overBy = images.length - MAX_IMAGES;
 
   // Pointer + touch + keyboard reordering. A small activation distance lets the
   // remove button still register taps without starting a drag.
@@ -1139,15 +1141,11 @@ function PasteShots({
   const addFiles = useCallback(async (files: FileList | null) => {
     if (!files) return;
     setError("");
-    setNotice("");
-    const room = MAX_IMAGES - images.length;
     const all = Array.from(files);
-    // FLAG-27: the cap is enforced HERE, at selection-completion, via the shared
-    // capFiles helper — so it holds IDENTICALLY for the file picker AND drag-drop
-    // (both reach this one function). Over-selection is a calm note, not an error.
-    const { kept: picked, notice: capNotice } = capFiles(all, room, MAX_IMAGES);
-    if (capNotice) setNotice(capNotice);
-    if (picked.length === 0) return;
+    if (all.length === 0) return;
+    // FLAG-29: add ALL validated images — no slice. Over-selection is handled at
+    // the Continue gate (the count can exceed MAX_IMAGES), not by dropping files.
+    // The file picker and drag-drop both reach this one validation path.
     // Stage 1 (FLAG-21): validate format + size + decodability BEFORE any vision
     // call. Specific, actionable message — never a generic "unsupported file".
     const ACCEPTED = ["image/png", "image/jpeg", "image/webp", "image/gif"];
@@ -1155,7 +1153,7 @@ function PasteShots({
     // FLAG-23 cut: validate + downscale concurrently (was a sequential for-await),
     // preserving order. Per-file validation/errors are unchanged.
     const results = await Promise.all(
-      picked.map(async (f): Promise<{ img?: ShotImage; err?: string }> => {
+      all.map(async (f): Promise<{ img?: ShotImage; err?: string }> => {
         const type = (f.type || "").toLowerCase();
         if (!ACCEPTED.includes(type)) {
           return {
@@ -1176,7 +1174,7 @@ function PasteShots({
     const err = results.find((r) => r.err)?.err ?? "";
     if (err) setError(err);
     if (out.length) setImages((prev) => [...prev, ...out]);
-  }, [images.length]);
+  }, []);
 
   const onDragEnd = (e: DragEndEvent) => {
     const { active, over } = e;
@@ -1276,12 +1274,19 @@ function PasteShots({
         </div>
       )}
 
-      {notice && <p className={styles.uploadNotice}>{notice}</p>}
+      {/* FLAG-29: over the cap → calm instruction (neutral, not the red banner),
+          numbers derived from the live count + MAX_IMAGES so they're always right. */}
+      {overBy > 0 && (
+        <p className={styles.uploadNotice}>
+          You&rsquo;ve added {images.length} — remove {overBy} to continue (max{" "}
+          {MAX_IMAGES}). Longer conversation? Paste the text instead.
+        </p>
+      )}
 
       <div className={styles.footerActions}>
         <button
           className={styles.primary}
-          disabled={images.length === 0}
+          disabled={images.length === 0 || images.length > MAX_IMAGES}
           onClick={() => onConfirm(images)}
         >
           Continue
