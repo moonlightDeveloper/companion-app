@@ -1,4 +1,12 @@
 /**
+ * The single source of truth for the screenshot upload limit. Imported by the
+ * client (PasteShots) AND the server (the /api/extract route) so the cap can
+ * never diverge between where it's enforced on selection and where it's
+ * re-checked downstream. Change it here only.
+ */
+export const MAX_IMAGES = 8;
+
+/**
  * Upload cap (FLAG-27). Pure selection-completion enforcement of MAX_IMAGES,
  * shared by BOTH upload entry points — the file picker and drag-drop — so a
  * drop can never bypass the cap the picker enforces. Returns the kept files

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { extractTranscript, ExtractError, type InputImage } from "@/lib/extract";
+import { MAX_IMAGES } from "@/lib/cap";
 
 export const runtime = "nodejs";
 // FLAG-25: give the vision call headroom above the client's 60s abort so the
@@ -8,7 +9,6 @@ export const runtime = "nodejs";
 // extraction tail.
 export const maxDuration = 90;
 
-const MAX_IMAGES = 6;
 const ALLOWED: InputImage["media_type"][] = [
   "image/png",
   "image/jpeg",
