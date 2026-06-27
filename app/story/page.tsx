@@ -310,13 +310,23 @@ export default function Story() {
       // Use the background read ONLY when there are no clarifications to fold in
       // and it was started for this exact conversation. Otherwise generate fresh
       // (full context + the clarify answers). Background failure → fresh.
-      if (clarifications.length === 0 && bg && bg.conv === answers.conversation) {
-        try {
-          read = await bg.promise;
-        } catch {
-          read = await freshPreview();
+      const acquire = async (): Promise<Read> => {
+        if (clarifications.length === 0 && bg && bg.conv === answers.conversation) {
+          try {
+            return await bg.promise;
+          } catch {
+            return await freshPreview();
+          }
         }
-      } else {
+        return await freshPreview();
+      };
+      try {
+        read = await acquire();
+      } catch {
+        // One automatic retry: a transient first-attempt failure (a tail-latency
+        // abort or an API hiccup) on the load-bearing anonymous first read (§2.8)
+        // should self-heal, not dump the user on the error screen. The retry is
+        // always a fresh generate — the background promise is already spent.
         read = await freshPreview();
       }
       bgReadRef.current = null;
