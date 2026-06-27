@@ -11,7 +11,7 @@
  * `MODEL_FAST`, and per-path `MODEL_<PATH>` overrides (highest priority) so every
  * path stays swappable as the frontier shifts.
  */
-export type ModelPath = "extract" | "analyze" | "reply" | "pattern" | "clarify";
+export type ModelPath = "extract" | "analyze" | "reply" | "pattern" | "clarify" | "history";
 
 const STRONG = process.env.MODEL || "claude-sonnet-4-6";
 const FAST = process.env.MODEL_FAST || "claude-haiku-4-5";
@@ -21,6 +21,7 @@ const PATH_MODEL: Record<ModelPath, string> = {
   reply: STRONG, // §2.6
   pattern: STRONG, // §2.5 cross-report synthesis
   clarify: STRONG, // §2.11 verdict-forking judgment
+  history: STRONG, // FLAG-34 single-read pre-read question — nuance/voice
   // extract stays STRONG until the FLAG-24 accuracy gate (real dense screenshots)
   // proves a fast model keeps message/attribution/ordering parity. Flip to FAST
   // there, not before.
