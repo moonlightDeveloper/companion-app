@@ -23,6 +23,7 @@ import { CSS } from "@dnd-kit/utilities";
 import type { Intake, Read, ReplyDraft, TranscriptMessage } from "@/types";
 import { saveConversation, evictExpired, getConversation } from "@/lib/localConversations";
 import { MAX_IMAGES } from "@/lib/cap";
+import { parseWhatsAppExport, type ParsedChat } from "@/lib/whatsapp";
 import styles from "./story.module.css";
 
 type Screen =
@@ -1035,7 +1036,7 @@ function ExtractFailure({
   );
 }
 
-type Mode = "choose" | "text" | "shots";
+type Mode = "choose" | "enter" | "whatsapp" | "text" | "shots";
 
 function Paste({
   name,
@@ -1065,21 +1066,58 @@ function Paste({
         {done && (
           <p className={styles.subtext}>
             {mode === "choose"
-              ? "Paste the part that matters, or upload screenshots. Names stay private."
-              : "Names stay private — only “You” and the nickname are kept."}
+              ? "Enter the conversation, or upload screenshots. Names stay private."
+              : mode === "enter"
+                ? "Import a WhatsApp chat, or paste the text yourself. Names stay private."
+                : "Names stay private — only “You” and the nickname are kept."}
           </p>
         )}
       </div>
 
       {mode === "choose" && (
         <div className={styles.options}>
-          <button className={styles.option} onClick={() => setMode("text")}>
-            <span>✍️ Paste the text</span>
+          <button className={styles.option} onClick={() => setMode("enter")}>
+            <span>
+              💬 Enter conversation
+              <small>Import a WhatsApp chat, or type it in</small>
+            </span>
           </button>
           <button className={styles.option} onClick={() => setMode("shots")}>
             <span>🖼️ Upload screenshots</span>
           </button>
         </div>
+      )}
+
+      {/* "Enter conversation" sub-choice: WhatsApp first (the reliable path),
+          plain text second (the existing manual paste). */}
+      {mode === "enter" && (
+        <>
+          <div className={styles.options}>
+            <button className={styles.option} onClick={() => setMode("whatsapp")}>
+              <span>
+                💬 WhatsApp
+                <small>Export the chat and upload the file</small>
+              </span>
+            </button>
+            <button className={styles.option} onClick={() => setMode("text")}>
+              <span>
+                ✍️ Plain text
+                <small>Paste the lines that matter</small>
+              </span>
+            </button>
+          </div>
+          <button
+            className={styles.ghost}
+            style={{ display: "block", width: "100%", marginTop: 12 }}
+            onClick={() => setMode("choose")}
+          >
+            Back
+          </button>
+        </>
+      )}
+
+      {mode === "whatsapp" && (
+        <WhatsAppImport name={name} onText={onText} onBack={() => setMode("enter")} />
       )}
 
       {mode === "text" && (
@@ -1118,6 +1156,157 @@ function PasteText({
           Continue {name}&rsquo;s story
         </button>
       </div>
+    </>
+  );
+}
+
+const WA_STEPS: Record<"ios" | "android", string[]> = {
+  ios: [
+    "Open the chat in WhatsApp.",
+    "Tap the name at the top to open contact info.",
+    "Scroll down and tap “Export Chat”.",
+    "Choose “Without Media”.",
+    "Save it (to Files, or mail it to yourself), then upload the .txt here.",
+  ],
+  android: [
+    "Open the chat in WhatsApp.",
+    "Tap ⋮ (top right) → More → “Export chat”.",
+    "Choose “Without Media”.",
+    "Save or send the .txt to yourself, then upload it here.",
+  ],
+};
+
+/**
+ * WhatsApp import (FLAG-32): per-device export steps → .txt upload → parse on
+ * device → "which one is you?" → map the chosen sender to "You" and the other
+ * to the nickname, flatten to the same transcript text the read pipeline takes,
+ * and hand it to onText. No real name and no raw file ever leaves the device.
+ */
+function WhatsAppImport({
+  name,
+  onText,
+  onBack,
+}: {
+  name: string;
+  onText: (v: string) => void;
+  onBack: () => void;
+}) {
+  const [platform, setPlatform] = useState<"ios" | "android">("ios");
+  const [parsed, setParsed] = useState<ParsedChat | null>(null);
+  const [error, setError] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (typeof navigator !== "undefined" && /android/i.test(navigator.userAgent)) {
+      setPlatform("android");
+    }
+  }, []);
+
+  const onFile = useCallback(async (file?: File) => {
+    setError("");
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      setError("That file's too large — a “Without Media” export should be well under 8 MB.");
+      return;
+    }
+    let raw = "";
+    try {
+      raw = await file.text();
+    } catch {
+      setError("Couldn't read that file — try exporting the chat again.");
+      return;
+    }
+    const chat = parseWhatsAppExport(raw);
+    if (chat.messages.length === 0 || chat.senders.length < 2) {
+      setError(
+        "That doesn't look like a two-person WhatsApp export — make sure you chose “Without Media” and uploaded the .txt.",
+      );
+      return;
+    }
+    setParsed(chat);
+  }, []);
+
+  const pickYou = (you: string) => {
+    if (!parsed) return;
+    // Map BEFORE anything leaves the device: chosen sender → "You", everyone
+    // else → the nickname. Real names never reach the server (privacy invariant).
+    const text = parsed.messages
+      .map((m) => `${m.sender === you ? "You" : name}: ${m.text}`)
+      .join("\n");
+    onText(text);
+  };
+
+  return (
+    <>
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".txt,text/plain"
+        hidden
+        onChange={(e) => onFile(e.target.files?.[0])}
+      />
+
+      {!parsed ? (
+        <>
+          <div className={styles.waToggle}>
+            {(["ios", "android"] as const).map((p) => (
+              <button
+                key={p}
+                className={`${styles.waToggleBtn}${platform === p ? ` ${styles.waToggleBtnActive}` : ""}`}
+                onClick={() => setPlatform(p)}
+              >
+                {p === "ios" ? "iPhone" : "Android"}
+              </button>
+            ))}
+          </div>
+          <ol className={styles.waSteps}>
+            {WA_STEPS[platform].map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ol>
+          {error && (
+            <div className={styles.uploadError} role="alert">
+              <span aria-hidden="true">⚠️</span>
+              <span>{error}</span>
+            </div>
+          )}
+          <div className={styles.footerActions}>
+            <button className={styles.primary} onClick={() => fileRef.current?.click()}>
+              Upload the .txt
+            </button>
+            <button
+              className={styles.ghost}
+              style={{ display: "block", width: "100%", marginTop: 8 }}
+              onClick={onBack}
+            >
+              Back
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className={styles.subtext} style={{ marginBottom: 6 }}>
+            Got {parsed.messages.length} messages. Which one is you?
+          </p>
+          <div className={styles.options}>
+            {parsed.senders.map((s) => (
+              <button key={s} className={styles.option} onClick={() => pickYou(s)}>
+                <span>{s}</span>
+              </button>
+            ))}
+          </div>
+          <button
+            className={styles.ghost}
+            style={{ display: "block", width: "100%", marginTop: 12 }}
+            onClick={() => {
+              setParsed(null);
+              setError("");
+            }}
+          >
+            Use a different file
+          </button>
+        </>
+      )}
     </>
   );
 }
