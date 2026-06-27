@@ -436,16 +436,31 @@
   background: color-mix(in srgb, var(--accent) 7%, #fff);
 }
 
-/* FLAG-27: calm, informational note (over-selection) — NOT the red error banner. */
-.uploadNotice {
-  margin: 12px 0 4px;
-  padding: 10px 14px;
-  background: #f6f3f1;
-  border: 1px solid var(--line);
+/* FLAG-30: red instruction banner on top of the grid when over the cap. Red for
+   visibility; the wording (set in JSX) stays directional, not accusatory. */
+.uploadBanner {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  background: #fdecea;
+  border: 1px solid var(--red);
   border-radius: 14px;
-  color: var(--muted, #7a6b66);
-  font-size: 13.5px;
-  line-height: 1.45;
+  color: var(--red);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.uploadBanner b {
+  font-weight: 600;
+}
+
+/* FLAG-30: thumbnails beyond the cap are dimmed (image + index badge only). The
+   ✕ delete control is deliberately NOT dimmed — it stays fully visible/active so
+   the extras are the easy ones to remove. */
+.thumbDimmed img {
+  opacity: 0.3;
+  filter: grayscale(0.6);
+}
+.thumbDimmed .thumbBadge {
+  opacity: 0.5;
 }
 
 /* ---------- transcript review ---------- */

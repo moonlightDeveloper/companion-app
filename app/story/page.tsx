@@ -1221,6 +1221,20 @@ function PasteShots({
           </button>
         ) : (
           <>
+            {/* FLAG-30: over the cap → red banner ON TOP of the grid. Red for
+                visibility, wording stays directional (instruction, not accusation).
+                Numbers interpolated from MAX_IMAGES + live count, never literals. */}
+            {overBy > 0 && (
+              <div className={styles.uploadBanner} role="alert">
+                <div>
+                  <b>
+                    Remove {overBy} to continue
+                  </b>{" "}
+                  — max {MAX_IMAGES} images.
+                </div>
+                <div>Longer conversation? Paste the text instead.</div>
+              </div>
+            )}
             <p className={styles.subtext} style={{ marginBottom: 8 }}>
               {images.length} of {MAX_IMAGES}
               {images.length > 1 ? " · drag to reorder, earliest first" : ""}
@@ -1241,6 +1255,9 @@ function PasteShots({
                       img={img}
                       index={i}
                       canReorder={images.length > 1}
+                      // FLAG-30: thumbnails beyond the cap are dimmed (visual only —
+                      // their ✕ stays active) so the extras to remove are obvious.
+                      dimmed={i >= MAX_IMAGES}
                       onRemove={() =>
                         setImages((p) => p.filter((x) => x.id !== img.id))
                       }
@@ -1274,15 +1291,6 @@ function PasteShots({
         </div>
       )}
 
-      {/* FLAG-29: over the cap → calm instruction (neutral, not the red banner),
-          numbers derived from the live count + MAX_IMAGES so they're always right. */}
-      {overBy > 0 && (
-        <p className={styles.uploadNotice}>
-          You&rsquo;ve added {images.length} — remove {overBy} to continue (max{" "}
-          {MAX_IMAGES}). Longer conversation? Paste the text instead.
-        </p>
-      )}
-
       <div className={styles.footerActions}>
         <button
           className={styles.primary}
@@ -1307,11 +1315,13 @@ function SortableThumb({
   img,
   index,
   canReorder,
+  dimmed,
   onRemove,
 }: {
   img: ShotImage;
   index: number;
   canReorder: boolean;
+  dimmed: boolean;
   onRemove: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -1320,7 +1330,7 @@ function SortableThumb({
   return (
     <div
       ref={setNodeRef}
-      className={styles.thumb}
+      className={`${styles.thumb}${dimmed ? ` ${styles.thumbDimmed}` : ""}`}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
