@@ -29,6 +29,7 @@ import styles from "./story.module.css";
 type Screen =
   | "boot"
   | "cover"
+  | "recover"
   | "welcome"
   | "pick"
   | "person"
@@ -65,6 +66,7 @@ const FLOW: Screen[] = [
 const EYEBROW: Partial<Record<Screen, string>> = {
   boot: "Private story",
   cover: "Private story",
+  recover: "Welcome back",
   read: "What I'm noticing",
 };
 
@@ -504,7 +506,7 @@ export default function Story() {
   }, [screen, personId, name]);
 
   const idx = FLOW.indexOf(screen);
-  const progress = (["boot", "cover", "pick", "person", "history", "report"] as Screen[]).includes(
+  const progress = (["boot", "cover", "recover", "pick", "person", "history", "report"] as Screen[]).includes(
     screen,
   )
     ? 0
@@ -526,7 +528,9 @@ export default function Story() {
               {EYEBROW[screen] || "Private story"}
             </div>
             <div className={styles.title}>
-              {screen === "cover" || screen === "boot" ? "Companion" : `${name}’s story`}
+              {screen === "cover" || screen === "boot" || screen === "recover"
+                ? "Companion"
+                : `${name}’s story`}
             </div>
           </div>
           <div className={styles.chipTop}>private</div>
@@ -561,8 +565,29 @@ export default function Story() {
 
           {/* Cover is the first-timer screen only; recognized users are routed to
               pick/welcome at boot. So Start always begins a new-person read — the
-              roster.length signal (wrong + racy) is gone (FLAG-38). */}
-          {screen === "cover" && <Cover onStart={() => go("name")} />}
+              roster.length signal (wrong + racy) is gone (FLAG-38). Recover is the
+              tier-3 (no-token) recovery entry — quiet/secondary (FLAG-47). */}
+          {screen === "cover" && (
+            <Cover onStart={() => go("name")} onRecover={() => go("recover")} />
+          )}
+
+          {screen === "recover" && (
+            <RecoverScreen
+              onBack={() => go("cover")}
+              onRecovered={async (em) => {
+                // Verified email ownership → session is set. Load the roster ONLY
+                // now (never on email entry alone), then into pick-or-create.
+                setSignedIn(true);
+                setEmail(em);
+                const persons = await fetch("/api/persons")
+                  .then((r) => r.json())
+                  .then((d) => (Array.isArray(d?.persons) ? d.persons : []))
+                  .catch(() => []);
+                setRoster(persons);
+                go("pick");
+              }}
+            />
+          )}
 
           {screen === "pick" && (
             <PickScreen
@@ -869,7 +894,7 @@ function Boot() {
   );
 }
 
-function Cover({ onStart }: { onStart: () => void }) {
+function Cover({ onStart, onRecover }: { onStart: () => void; onRecover: () => void }) {
   return (
     <section className={styles.screen}>
       <div className={styles.hero}>
@@ -890,6 +915,15 @@ function Cover({ onStart }: { onStart: () => void }) {
         <button className={styles.primary} onClick={onStart}>
           Start a story
         </button>
+        {/* FLAG-47: tier-3 recovery — discoverable but secondary, so it never
+            competes with the primary start path or confuses genuinely-new users. */}
+        <button
+          className={styles.ghost}
+          style={{ display: "block", width: "100%", marginTop: 12 }}
+          onClick={onRecover}
+        >
+          Returning on a new device? Recover your people
+        </button>
         <div className={styles.noteCard}>
           <h3>This isn&rsquo;t a chatbot</h3>
           <p>
@@ -899,6 +933,160 @@ function Cover({ onStart }: { onStart: () => void }) {
           </p>
         </div>
       </div>
+    </section>
+  );
+}
+
+/**
+ * FLAG-47: tier-3 email-code recovery (new device / cleared cookies — no soft
+ * token). Reuses the OTP plumbing: request a code, verify it, session is set,
+ * then the parent loads the roster. Two-factor: email + the code that proves the
+ * user owns it. The message after the email step is neutral (no enumeration).
+ */
+function RecoverScreen({
+  onRecovered,
+  onBack,
+}: {
+  onRecovered: (email: string) => void;
+  onBack: () => void;
+}) {
+  const [step, setStep] = useState<"email" | "code">("email");
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const sendCode = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const data = await res.json();
+      // Neutral by design: a registered email and an unregistered one both
+      // return ok here — we never reveal which. Only a format/config error stops us.
+      if (!res.ok) {
+        setError(data?.error || "Couldn't send a code just now. Try again.");
+        return;
+      }
+      setStep("code");
+    } catch {
+      setError("Couldn't send a code just now. Try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verify = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/otp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), code: code.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data?.error || "That code didn't work. Request a new one.");
+        return;
+      }
+      onRecovered(email.trim());
+    } catch {
+      setError("That code didn't work. Try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className={styles.screen}>
+      <div className={styles.stepHead}>
+        <div className={styles.questionWrap}>
+          <h2 className={styles.question}>Recover your people</h2>
+        </div>
+        <p className={styles.subtext}>
+          {step === "email"
+            ? "New device or cleared your cookies? Enter your email and we'll bring your saved stories back."
+            : "If that email's registered, we've sent a 6-digit code. Check your inbox and enter it below."}
+        </p>
+      </div>
+
+      {step === "email" ? (
+        <>
+          <input
+            className={styles.input}
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            placeholder="you@email.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          {error && (
+            <div className={styles.uploadError} role="alert" style={{ marginTop: 12 }}>
+              <span aria-hidden="true">⚠️</span>
+              <span>{error}</span>
+            </div>
+          )}
+          <div className={styles.footerActions}>
+            <button
+              className={styles.primary}
+              disabled={loading || !email.trim()}
+              onClick={sendCode}
+            >
+              {loading ? "Sending…" : "Send code"}
+            </button>
+            <button
+              className={styles.ghost}
+              style={{ display: "block", width: "100%", marginTop: 8 }}
+              onClick={onBack}
+            >
+              Back
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <input
+            className={styles.input}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            placeholder="6-digit code"
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+          />
+          {error && (
+            <div className={styles.uploadError} role="alert" style={{ marginTop: 12 }}>
+              <span aria-hidden="true">⚠️</span>
+              <span>{error}</span>
+            </div>
+          )}
+          <div className={styles.footerActions}>
+            <button
+              className={styles.primary}
+              disabled={loading || code.trim().length < 6}
+              onClick={verify}
+            >
+              {loading ? "Checking…" : "Verify"}
+            </button>
+            <button
+              className={styles.ghost}
+              style={{ display: "block", width: "100%", marginTop: 8 }}
+              onClick={() => {
+                setStep("email");
+                setCode("");
+                setError("");
+              }}
+            >
+              Use a different email
+            </button>
+          </div>
+        </>
+      )}
     </section>
   );
 }
