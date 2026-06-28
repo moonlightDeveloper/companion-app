@@ -31,11 +31,17 @@ function firstSentence(s: string): [string, string] {
   return m ? [m[1].trim(), m[2].trim()] : [s.trim(), ""];
 }
 
-export function toScript(read: Read): FriendItem[] {
+export function toScript(read: Read, opts?: { trimmed?: boolean }): FriendItem[] {
   const items: FriendItem[] = [];
 
   items.push({ t: "type", cls: "big", text: read.headline });
   items.push({ t: "pop", cls: "small", text: DISCLAIMER });
+  // FLAG-43: only when the conversation was windowed for the API call. The full
+  // conversation is still stored on-device; this just tells the user the read
+  // focused on the recent stretch.
+  if (opts?.trimmed) {
+    items.push({ t: "pop", cls: "small", text: "This chat is long, so I focused on the most recent part." });
+  }
 
   for (const b of read.bars) items.push({ t: "bar", bar: b });
 
