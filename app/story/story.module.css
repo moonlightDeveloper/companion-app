@@ -224,6 +224,29 @@
   font-size: 13px;
   margin-top: 10px;
 }
+/* FLAG-38: entry boot splash — a calm brand wordmark (NOT the working/typing
+   dots). One slow breath so it reads as "starting", never as "loading content". */
+.bootSplash {
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+.bootMark {
+  font-size: 26px;
+  font-weight: 850;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  animation: bootBreath 1.8s ease-in-out infinite;
+}
+@keyframes bootBreath {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
 .dots {
   display: inline-flex;
   gap: 4px;
