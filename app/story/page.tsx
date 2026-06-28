@@ -27,6 +27,7 @@ import { parseWhatsAppExport, type ParsedChat } from "@/lib/whatsapp";
 import styles from "./story.module.css";
 
 type Screen =
+  | "boot"
   | "cover"
   | "welcome"
   | "pick"
@@ -62,6 +63,7 @@ const FLOW: Screen[] = [
 ];
 
 const EYEBROW: Partial<Record<Screen, string>> = {
+  boot: "Private story",
   cover: "Private story",
   read: "What I'm noticing",
 };
@@ -144,7 +146,7 @@ type ClientReport = { id: string; result: Read; created_at: string };
 const normalizeNickname = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
 
 export default function Story() {
-  const [screen, setScreen] = useState<Screen>("cover");
+  const [screen, setScreen] = useState<Screen>("boot");
   const [history, setHistory] = useState<Screen[]>([]);
   const [answers, setAnswers] = useState<Intake>(emptyIntake);
   const [status, setStatus] = useState<Status>("idle");
@@ -433,30 +435,44 @@ export default function Story() {
     };
   }, [screen, answers.conversation, name, go, extractStatus, reviewMessages]);
 
-  // Load the signed-in user's roster (empty if not signed in) for pick-or-create.
+  // Entry boot (FLAG-38): decide the first screen ONCE, then render — no
+  // first-time→returning flash. Three lanes kept separate:
+  //   (a) /api/me  → the SOLE "returning?" signal; entry routes only from it.
+  //   (b) roster   → pick-vs-create *within* a recognized session, after it loads.
+  //   (c) personReports (elsewhere) → FLAG-34 history question only; never entry.
+  // /api/me is cookie-only server-side (no DB) but still a round-trip; /api/persons
+  // adds a Neon query, so we gate on max(me, persons) — both run in parallel.
   useEffect(() => {
-    fetch("/api/persons")
+    type Me = { signedIn?: boolean; email?: string; hasSoftToken?: boolean };
+    const meP: Promise<Me | null> = fetch("/api/me")
       .then((r) => r.json())
-      .then((d) => setRoster(Array.isArray(d?.persons) ? d.persons : []))
-      .catch(() => {});
-  }, []);
+      .catch(() => null);
+    const personsP: Promise<RosterPerson[]> = fetch("/api/persons")
+      .then((r) => r.json())
+      .then((d) => (Array.isArray(d?.persons) ? d.persons : []))
+      .catch(() => []);
 
-  // Entry routing (FLAG-22): a recognized session jumps straight to the roster;
-  // a known device (soft token, no session) gets the welcome/recognition step;
-  // a true first-timer stays on the cover.
-  useEffect(() => {
-    fetch("/api/me")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d?.signedIn) {
-          setSignedIn(true);
-          if (typeof d.email === "string") setEmail(d.email);
-          setScreen("pick");
-        } else if (d?.hasSoftToken) {
-          setScreen("welcome");
-        }
-      })
-      .catch(() => {});
+    // Data lanes — populate session + roster whenever they land; never move the
+    // screen. So even a timed-out-to-cover user keeps their session/roster.
+    meP.then((me) => {
+      if (me?.signedIn) {
+        setSignedIn(true);
+        if (typeof me.email === "string") setEmail(me.email);
+      }
+    });
+    personsP.then(setRoster);
+
+    // Screen lane — decided ONCE. A cold/hung check degrades to first-time after
+    // a cap (safe — "treated as new"), never stuck on the splash.
+    let decided = false;
+    const cap = new Promise<null>((res) => setTimeout(() => res(null), 2500));
+    Promise.race([Promise.all([meP, personsP]).then(([me]) => me), cap]).then((me) => {
+      if (decided) return;
+      decided = true;
+      if (me?.signedIn) setScreen("pick");
+      else if (me?.hasSoftToken) setScreen("welcome");
+      else setScreen("cover");
+    });
   }, []);
 
   // On the person overview, load their past reports + the cross-report pattern.
@@ -475,7 +491,7 @@ export default function Story() {
   }, [screen, personId, name]);
 
   const idx = FLOW.indexOf(screen);
-  const progress = (["cover", "pick", "person", "history", "report"] as Screen[]).includes(
+  const progress = (["boot", "cover", "pick", "person", "history", "report"] as Screen[]).includes(
     screen,
   )
     ? 0
@@ -497,7 +513,7 @@ export default function Story() {
               {EYEBROW[screen] || "Private story"}
             </div>
             <div className={styles.title}>
-              {screen === "cover" ? "Companion" : `${name}’s story`}
+              {screen === "cover" || screen === "boot" ? "Companion" : `${name}’s story`}
             </div>
           </div>
           <div className={styles.chipTop}>private</div>
@@ -528,9 +544,12 @@ export default function Story() {
             />
           ) : (
           <>
-          {screen === "cover" && (
-            <Cover onStart={() => go(roster.length ? "pick" : "name")} />
-          )}
+          {screen === "boot" && <Boot />}
+
+          {/* Cover is the first-timer screen only; recognized users are routed to
+              pick/welcome at boot. So Start always begins a new-person read — the
+              roster.length signal (wrong + racy) is gone (FLAG-38). */}
+          {screen === "cover" && <Cover onStart={() => go("name")} />}
 
           {screen === "pick" && (
             <PickScreen
@@ -821,6 +840,22 @@ function TypingDots() {
 }
 
 /* ---------- screens ---------- */
+/**
+ * FLAG-38: the entry splash held while the boot check resolves who you are.
+ * Minimal brand mark — deliberately NOT TypingDots (that means "Claude is working
+ * on your read"; this means "the app is figuring out who you are before anything
+ * starts"). Distinct states, distinct visuals.
+ */
+function Boot() {
+  return (
+    <section className={styles.screen} style={{ justifyContent: "center" }}>
+      <div className={styles.bootSplash}>
+        <div className={styles.bootMark}>Companion</div>
+      </div>
+    </section>
+  );
+}
+
 function Cover({ onStart }: { onStart: () => void }) {
   return (
     <section className={styles.screen}>
