@@ -33,6 +33,10 @@ export async function analyze(
     const response = await client.messages.create({
       model: modelFor("analyze"),
       max_tokens: 2000,
+      // FLAG-44: 0.3, not the default 1.0. The verdict is stable either way, but
+      // 1.0 jitters the surface wording run-to-run (reads "unreliable"); 0.3 keeps
+      // the read consistent without going fully deterministic.
+      temperature: 0.3,
       system: cachedSystem(SYSTEM_PROMPT),
       messages: [{ role: "user", content: buildUserMessage(intake, clarifications) }],
     });
