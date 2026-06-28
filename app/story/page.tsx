@@ -180,6 +180,11 @@ export default function Story() {
   // FLAG-34: the backgrounded history question (from-person only), resolved to
   // the question string ("" if none). Kicked at "New report", consumed at clarify.
   const historyQRef = useRef<Promise<string> | null>(null);
+  // FLAG-36: mirror of fromPerson, readable inside the []-dep startBgRead.
+  const fromPersonRef = useRef(false);
+  useEffect(() => {
+    fromPersonRef.current = fromPerson;
+  }, [fromPerson]);
 
   const name = answers.name.trim() || "this person";
 
@@ -203,6 +208,14 @@ export default function Story() {
   // generating the read in the background (preview = no auth/save/email) so the
   // wait overlaps the remaining questions. Capped so it never hangs.
   const startBgRead = useCallback((conversation: string, intake: Intake) => {
+    // FLAG-36: a from-person read always carries the FLAG-34 history
+    // clarification, which forces a fresh foreground generate — so a background
+    // read here would always be discarded. Skip it; don't spend the Claude call.
+    // Latency is unchanged (that read was already regenerated foreground).
+    if (fromPersonRef.current) {
+      bgReadRef.current = null;
+      return;
+    }
     const promise = (async () => {
       const ctrl = new AbortController();
       // FLAG-35: 40s (was 25s). Reads land ~15s; 40s is headroom for a transient
