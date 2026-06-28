@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { modelFor, cachedSystem } from "./models";
+import { mockLlmEnabled, MOCK_CLARIFY } from "./mockLlm";
 
 export class ClarifyError extends Error {}
 
@@ -32,6 +33,7 @@ export async function clarifyQuestions(
   conversation: string,
   nickname: string,
 ): Promise<string[]> {
+  if (mockLlmEnabled()) return MOCK_CLARIFY;
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new ClarifyError("Missing ANTHROPIC_API_KEY");
 

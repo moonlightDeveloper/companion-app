@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Transcript, TranscriptMessage } from "@/types";
 import { modelFor, cachedSystem } from "./models";
+import { mockLlmEnabled, mockTranscript } from "./mockLlm";
 
 /** Thrown when the vision call fails or returns no transcript. */
 export class ExtractError extends Error {}
@@ -80,6 +81,7 @@ export async function extractTranscript(
   images: InputImage[],
   nickname: string,
 ): Promise<Transcript> {
+  if (mockLlmEnabled()) return mockTranscript(nickname);
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new ExtractError("Missing ANTHROPIC_API_KEY");
 

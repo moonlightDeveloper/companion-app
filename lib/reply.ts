@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ReplyDraft } from "@/types";
 import { modelFor, cachedSystem } from "./models";
+import { mockLlmEnabled, MOCK_REPLY } from "./mockLlm";
 
 /** Thrown when the model call or JSON parsing fails. */
 export class ReplyError extends Error {}
@@ -27,6 +28,7 @@ export async function draftReplies(params: {
   intent: string;
   nickname: string;
 }): Promise<ReplyDraft[]> {
+  if (mockLlmEnabled()) return MOCK_REPLY;
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new ReplyError("Missing ANTHROPIC_API_KEY");
 

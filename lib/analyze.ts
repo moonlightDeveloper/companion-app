@@ -9,6 +9,7 @@ import type {
 } from "@/types";
 import { SYSTEM_PROMPT, buildUserMessage, type Clarification } from "@/lib/prompt";
 import { modelFor, cachedSystem } from "./models";
+import { mockLlmEnabled, MOCK_READ } from "./mockLlm";
 
 /** Thrown when the model call or JSON parsing fails. */
 export class AnalyzeError extends Error {}
@@ -21,6 +22,7 @@ export async function analyze(
   intake: Intake,
   clarifications: Clarification[] = [],
 ): Promise<Read> {
+  if (mockLlmEnabled()) return MOCK_READ;
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new AnalyzeError("Missing ANTHROPIC_API_KEY");

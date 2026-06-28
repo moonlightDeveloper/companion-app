@@ -112,6 +112,10 @@ preserve them; port from them, don't delete them.
 ## Commands
 
 - `npm run dev` — dev server (http://localhost:3000)
+- `MOCK_LLM=1 npm run dev` — dev server with every Claude call stubbed (FLAG-39,
+  `lib/mockLlm.ts`): click through the whole flow with **zero API spend** for
+  plumbing/flow/UI tests. Prod-guarded (off when `NODE_ENV==="production"`). Run
+  real model-**output** checks (read quality, extraction parity) with the flag OFF.
 - `npm run build` — production build
 - `npm run lint` — ESLint
 - `npx tsc --noEmit` — typecheck (there is no dedicated script)
