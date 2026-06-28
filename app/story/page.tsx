@@ -203,7 +203,9 @@ export default function Story() {
   const startBgRead = useCallback((conversation: string, intake: Intake) => {
     const promise = (async () => {
       const ctrl = new AbortController();
-      const t = window.setTimeout(() => ctrl.abort(), 25000);
+      // FLAG-35: 40s (was 25s). Reads land ~15s; 40s is headroom for a transient
+      // API slow-window so a slow-but-completing read lands, not a false abort.
+      const t = window.setTimeout(() => ctrl.abort(), 40000);
       try {
         const res = await fetch("/api/analyze", {
           method: "POST",
@@ -292,7 +294,10 @@ export default function Story() {
 
     const freshPreview = async (): Promise<Read> => {
       const ctrl = new AbortController();
-      const t = window.setTimeout(() => ctrl.abort(), 25000);
+      // FLAG-35: 40s (was 25s). Post-FLAG-34 every returning read regenerates on
+      // this foreground path; 40s covers a transient ~2.7x stall without a false
+      // "couldn't finish". The retry below still catches transient errors.
+      const t = window.setTimeout(() => ctrl.abort(), 40000);
       try {
         const res = await fetch("/api/analyze", {
           method: "POST",
