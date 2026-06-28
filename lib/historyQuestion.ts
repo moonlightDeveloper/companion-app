@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Read } from "@/types";
 import { modelFor, cachedSystem } from "./models";
+import { mockLlmEnabled, MOCK_HISTORY_Q } from "./mockLlm";
 
 export class HistoryQuestionError extends Error {}
 
@@ -30,6 +31,7 @@ const SYSTEM = [
 
 /** One question grounded in a single prior read, or "" if none can be formed. */
 export async function historyQuestion(read: Read, nickname: string): Promise<string> {
+  if (mockLlmEnabled()) return MOCK_HISTORY_Q;
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new HistoryQuestionError("Missing ANTHROPIC_API_KEY");
 

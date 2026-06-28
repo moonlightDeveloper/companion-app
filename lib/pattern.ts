@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Read } from "@/types";
 import { modelFor, cachedSystem } from "./models";
+import { mockLlmEnabled, MOCK_PATTERN } from "./mockLlm";
 
 export class PatternError extends Error {}
 
@@ -19,6 +20,7 @@ const SYSTEM = [
 
 /** One quiet cross-report observation. Caller ensures there are 2+ reads. */
 export async function synthesizePattern(reads: Read[], nickname: string): Promise<string> {
+  if (mockLlmEnabled()) return MOCK_PATTERN;
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new PatternError("Missing ANTHROPIC_API_KEY");
 
