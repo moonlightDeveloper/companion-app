@@ -36,6 +36,15 @@ export async function analyze(
       system: cachedSystem(SYSTEM_PROMPT),
       messages: [{ role: "user", content: buildUserMessage(intake, clarifications) }],
     });
+    // FLAG-42: cache tripwire. HIT (read>0) is the steady state after the first
+    // read in the 5-min TTL. Persistent MISS with write>0 = the cached system
+    // prefix stopped being byte-identical (a prompt tweak / dynamic value crept
+    // in) and we're silently paying full input price — caching broke, fix it.
+    const u = response.usage;
+    console.info(
+      `[analyze] cache ${(u.cache_read_input_tokens ?? 0) > 0 ? "HIT" : "MISS"} ` +
+        `read=${u.cache_read_input_tokens ?? 0} write=${u.cache_creation_input_tokens ?? 0}`,
+    );
     text = response.content
       .filter((block) => block.type === "text")
       .map((block) => block.text)
