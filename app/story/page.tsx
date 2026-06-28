@@ -1186,15 +1186,46 @@ const WA_STEPS: Record<"ios" | "android", string[]> = {
     "Tap the name at the top to open contact info.",
     "Scroll down and tap “Export Chat”.",
     "Choose “Without Media”.",
-    "Save it (to Files, or mail it to yourself), then upload the .txt here.",
+    "Save it (to Files, or mail it to yourself), then upload it here.",
   ],
   android: [
     "Open the chat in WhatsApp.",
     "Tap ⋮ (top right) → More → “Export chat”.",
     "Choose “Without Media”.",
-    "Save or send the .txt to yourself, then upload it here.",
+    "Save or send it to yourself, then upload it here.",
   ],
 };
+
+/**
+ * FLAG-37: pull the WhatsApp chat .txt out of an export zip, entirely in the
+ * browser (JSZip is dynamic-imported so it stays off the .txt path and out of
+ * the main bundle). Media entries are never decompressed — only the chosen .txt
+ * is. Throws "NO_TXT" when the zip has no chat text; loadAsync throws on a
+ * corrupt zip. The zip bytes never leave the device.
+ */
+async function readTxtFromZip(file: File): Promise<string> {
+  const { default: JSZip } = await import("jszip");
+  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+  const txts = Object.values(zip.files).filter((f) => {
+    const base = f.name.split("/").pop() ?? f.name;
+    // Real .txt entries only — skip directories, the __MACOSX/ folder, and
+    // ._-prefixed AppleDouble stubs (a Mac re-zip leaves "._chat.txt" junk).
+    return (
+      !f.dir &&
+      /\.txt$/i.test(f.name) &&
+      !f.name.startsWith("__MACOSX/") &&
+      !base.startsWith("._")
+    );
+  });
+  if (txts.length === 0) throw new Error("NO_TXT");
+  // Prefer the canonical chat file (iOS "_chat.txt", Android "WhatsApp Chat
+  // with ….txt"); otherwise the first real .txt.
+  const chat =
+    txts.find((f) => /(^|\/)_chat\.txt$/i.test(f.name)) ??
+    txts.find((f) => /whatsapp chat with/i.test(f.name)) ??
+    txts[0];
+  return chat.async("string");
+}
 
 /**
  * WhatsApp import (FLAG-32): per-device export steps → .txt upload → parse on
@@ -1225,21 +1256,38 @@ function WhatsAppImport({
   const onFile = useCallback(async (file?: File) => {
     setError("");
     if (!file) return;
-    if (file.size > 8 * 1024 * 1024) {
-      setError("That file's too large — a “Without Media” export should be well under 8 MB.");
+    const isZip = /\.zip$/i.test(file.name) || /zip/i.test(file.type);
+    // FLAG-37: validate SIZE BEFORE opening the zip — reject an oversized
+    // container without decompressing it. Only the txt entry is ever
+    // decompressed, so memory ≈ txt size; 50 MB just guards an absurd container.
+    const cap = isZip ? 50 * 1024 * 1024 : 8 * 1024 * 1024;
+    if (file.size > cap) {
+      setError(
+        isZip
+          ? "That zip's too large — export “Without Media” and it'll be just a few MB."
+          : "That file's too large — a “Without Media” export should be well under 8 MB.",
+      );
       return;
     }
     let raw = "";
     try {
-      raw = await file.text();
-    } catch {
-      setError("Couldn't read that file — try exporting the chat again.");
+      // .zip → unzip in-browser and pull the chat .txt out (FLAG-37); .txt →
+      // read directly (FLAG-32, unchanged). Both feed the same parser below.
+      raw = isZip ? await readTxtFromZip(file) : await file.text();
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message === "NO_TXT"
+          ? "Couldn't find the chat text in that zip — make sure it's a WhatsApp export."
+          : isZip
+            ? "Couldn't open that zip — try exporting again, or upload the .txt."
+            : "Couldn't read that file — try exporting the chat again.",
+      );
       return;
     }
     const chat = parseWhatsAppExport(raw);
     if (chat.messages.length === 0 || chat.senders.length < 2) {
       setError(
-        "That doesn't look like a two-person WhatsApp export — make sure you chose “Without Media” and uploaded the .txt.",
+        "That doesn't look like a two-person WhatsApp export — make sure you chose “Without Media” and uploaded the chat file.",
       );
       return;
     }
@@ -1261,7 +1309,7 @@ function WhatsAppImport({
       <input
         ref={fileRef}
         type="file"
-        accept=".txt,text/plain"
+        accept=".txt,.zip,text/plain,application/zip,application/x-zip-compressed"
         hidden
         onChange={(e) => onFile(e.target.files?.[0])}
       />
@@ -1284,6 +1332,9 @@ function WhatsAppImport({
               <li key={i}>{s}</li>
             ))}
           </ol>
+          <p className={styles.subtext} style={{ marginBottom: 4 }}>
+            Upload whatever WhatsApp gives you — a .txt or .zip both work (any media is ignored).
+          </p>
           {error && (
             <div className={styles.uploadError} role="alert">
               <span aria-hidden="true">⚠️</span>
@@ -1292,7 +1343,7 @@ function WhatsAppImport({
           )}
           <div className={styles.footerActions}>
             <button className={styles.primary} onClick={() => fileRef.current?.click()}>
-              Upload the .txt
+              Upload .txt or .zip
             </button>
             <button
               className={styles.ghost}
