@@ -256,6 +256,18 @@ export async function getUserEmail(userId: string): Promise<string | null> {
   return rows[0]?.email ?? null;
 }
 
+/** FLAG-47: does an account exist for this email? Read-only — never creates a
+ *  row (unlike upsertUser). Case-insensitive. Used to gate the recovery code
+ *  send so codes only go to registered emails — without revealing existence. */
+export async function userExistsByEmail(email: string): Promise<boolean> {
+  const sql = getSql();
+  await ensureSchema();
+  const rows = await sql<{ exists: boolean }[]>`
+    SELECT EXISTS(SELECT 1 FROM users WHERE LOWER(email) = ${email.trim().toLowerCase()}) AS "exists"
+  `;
+  return rows[0]?.exists === true;
+}
+
 /** Flip a user to verified (the magic-link cross-device upgrade, §2.8). */
 export async function markVerified(userId: string): Promise<void> {
   const sql = getSql();

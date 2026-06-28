@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { hashCode, AuthError } from "@/lib/auth";
-import { setLoginCode, DbError } from "@/lib/db";
-import { sendLoginCode, EmailError } from "@/lib/email";
+import { hashCode } from "@/lib/auth";
+import { setLoginCode, userExistsByEmail } from "@/lib/db";
+import { sendLoginCode } from "@/lib/email";
 
 export const runtime = "nodejs";
 
@@ -26,22 +26,22 @@ export async function POST(request: Request) {
   }
 
   try {
-    const code = String(Math.floor(100000 + Math.random() * 900000)); // 6 digits
-    await setLoginCode(email, hashCode(email, code), new Date(Date.now() + 10 * 60 * 1000));
-    await sendLoginCode({ to: email, code });
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    const missing =
-      (err instanceof AuthError || err instanceof EmailError || err instanceof DbError) &&
-      /^Missing /.test(err.message);
-    if (missing) {
-      console.error("sign-in not configured:", err instanceof Error ? err.message : "unknown");
-      return NextResponse.json({ error: "Sign-in isn't configured yet." }, { status: 500 });
+    // FLAG-47: only send a code to a REGISTERED email — but the response is
+    // IDENTICAL whether or not the email exists (no account enumeration). The
+    // existence check + send happen entirely behind the scenes.
+    if (await userExistsByEmail(email)) {
+      const code = String(Math.floor(100000 + Math.random() * 900000)); // 6 digits
+      await setLoginCode(email, hashCode(email, code), new Date(Date.now() + 10 * 60 * 1000));
+      await sendLoginCode({ to: email, code });
     }
+  } catch (err) {
+    // Swallow ALL failures into the neutral response. Surfacing an error only
+    // when the email exists (the send/config path runs only for existing emails)
+    // would itself leak existence. Logged loudly for ops; never shown to the
+    // client. Trade-off: a genuinely misconfigured environment fails silently —
+    // acceptable for a no-enumeration guarantee, and the log makes it visible.
     console.error("otp request failed:", err instanceof Error ? err.message : "unknown");
-    return NextResponse.json(
-      { error: "Couldn't send a code just now. Please try again." },
-      { status: 502 },
-    );
   }
+  // Neutral, always — identical whether or not the email is registered.
+  return NextResponse.json({ ok: true });
 }
