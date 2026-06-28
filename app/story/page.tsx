@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   closestCenter,
@@ -24,6 +24,7 @@ import type { Intake, Read, ReplyDraft, TranscriptMessage } from "@/types";
 import { saveConversation, evictExpired, getConversation } from "@/lib/localConversations";
 import { MAX_IMAGES } from "@/lib/cap";
 import { parseWhatsAppExport, type ParsedChat } from "@/lib/whatsapp";
+import { toScript, type FriendItem } from "@/lib/friendScript";
 import styles from "./story.module.css";
 
 type Screen =
@@ -2382,6 +2383,9 @@ function ReadScreen({
   onFix: (text: string) => void;
   onRetry: () => void;
 }) {
+  // FLAG-48: "Help me reply" in the friend delivery reveals the existing
+  // ReplyHelper (§2.6) — no new reply logic.
+  const [replyOpen, setReplyOpen] = useState(false);
   if (status === "loading" || status === "idle") {
     return (
       <section className={styles.screen}>
@@ -2452,31 +2456,15 @@ function ReadScreen({
 
   return (
     <section className={styles.screen}>
-      <div className={styles.stepHead}>
-        <div className={styles.questionWrap} style={{ minHeight: 60 }}>
-          <h2 className={styles.question}>{read.headline}</h2>
-        </div>
-        <p className={styles.subtext}>
-          Based only on what you shared. I read behavior &mdash; I won&rsquo;t
-          pretend to know their feelings.
-        </p>
-      </div>
+      {/* FLAG-48: the read is delivered as a friend talking it through. Pure
+          presentation — the analysis/conclusions are unchanged (Option A maps the
+          existing Read fields to typed/pop/reveal turns). */}
+      <FriendRead read={read} emailed={emailed} onReply={() => setReplyOpen(true)} />
 
-      <div className={styles.status}>
-        <span className={styles.pill}>{read.status_tag}</span>
-        <span className={styles.pill}>Free read</span>
-      </div>
-
-      <p className={styles.subtext} style={{ marginTop: -4 }}>
-        {emailed
-          ? "Saved, and a copy is on its way to your inbox."
-          : "Saved. We couldn’t email it just now, but it’s here for you."}
-      </p>
-
-      <ReadBody read={read} />
-
-      {/* Reply help only exists while the conversation is in hand right now. */}
-      {conversation.trim() && <ReplyHelper name={name} conversation={conversation} />}
+      {/* "Help me reply" reveals the existing reply-assist (§2.6). */}
+      {replyOpen && conversation.trim() && (
+        <ReplyHelper name={name} conversation={conversation} />
+      )}
 
       {/* Backstop: catch a confident misread (wrong-side attribution) or enrich
           voice-message gaps. */}
@@ -2490,12 +2478,6 @@ function ReadScreen({
 
       {/* Cross-device upgrade — offered once, after value, never a wall. */}
       <XDeviceOffer />
-
-      <div className={styles.footerActions}>
-        <Link href="/" className={styles.secondary} style={{ display: "block", textAlign: "center" }}>
-          Done for now
-        </Link>
-      </div>
     </section>
   );
 }
@@ -2534,6 +2516,262 @@ function ReadBody({ read }: { read: Read }) {
         )}
       </div>
     </>
+  );
+}
+
+/* ---------- FLAG-48: "friend talking it through" report delivery ---------- */
+// Exact timings ported from the approved report-friend-final.html.
+const FRIEND = {
+  THINK: 3400, TYPE_PER: 20, SPACE: 10, PUNCT: 120, TYPE_PRE: 300, TYPE_POST: 650,
+  POP: 560, REVEAL: 820,
+} as const;
+const FRIEND_PUNCT = /[.,;—?!]/;
+
+const friendToneColor = (tone: string) =>
+  tone === "good" ? "var(--f-good)" : tone === "low" ? "var(--f-concern)" : "var(--f-warm)";
+
+function FriendRead({
+  read,
+  emailed,
+  onReply,
+}: {
+  read: Read;
+  emailed: boolean;
+  onReply: () => void;
+}) {
+  const script = useMemo(() => toScript(read), [read]);
+  const [phase, setPhase] = useState<"thinking" | "flow">("thinking");
+  const [shown, setShown] = useState(0);
+  const [typing, setTyping] = useState<{ i: number; text: string } | null>(null);
+  const [finished, setFinished] = useState(false);
+
+  const cancelled = useRef(false);
+  const follow = useRef(true);
+  const timers = useRef<number[]>([]);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  const scrollFollow = useCallback(() => {
+    if (follow.current) endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, []);
+
+  const showAll = useCallback(() => {
+    cancelled.current = true;
+    timers.current.forEach((t) => clearTimeout(t));
+    setTyping(null);
+    setPhase("flow");
+    setShown(script.length);
+    setFinished(true);
+  }, [script.length]);
+
+  // Corrected manual-scroll (FLAG-48, overrides the file's unconditional
+  // auto-scroll): auto-follow until the user scrolls UP via wheel / keyboard /
+  // touch — then OFF for good. No jump, no near-bottom resume.
+  useEffect(() => {
+    const stop = () => {
+      follow.current = false;
+    };
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) stop();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowUp" || e.key === "PageUp" || e.key === "Home") stop();
+    };
+    let ty = 0;
+    const onTS = (e: TouchEvent) => {
+      ty = e.touches[0]?.clientY ?? 0;
+    };
+    const onTM = (e: TouchEvent) => {
+      if ((e.touches[0]?.clientY ?? 0) > ty + 4) stop();
+    };
+    window.addEventListener("wheel", onWheel, { passive: true });
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("touchstart", onTS, { passive: true });
+    window.addEventListener("touchmove", onTM, { passive: true });
+    return () => {
+      window.removeEventListener("wheel", onWheel);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("touchstart", onTS);
+      window.removeEventListener("touchmove", onTM);
+    };
+  }, []);
+
+  // The sequencer — same dwell/typing values as the reference file.
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      showAll();
+      return;
+    }
+    cancelled.current = false;
+    const list = timers.current;
+    const wait = (ms: number) =>
+      new Promise<void>((r) => {
+        list.push(window.setTimeout(r, ms));
+      });
+    (async () => {
+      await wait(FRIEND.THINK);
+      if (cancelled.current) return;
+      setPhase("flow");
+      for (let i = 0; i < script.length; i++) {
+        if (cancelled.current) return;
+        const item = script[i];
+        if (item.t === "type") {
+          await wait(FRIEND.TYPE_PRE);
+          if (cancelled.current) return;
+          let acc = "";
+          setTyping({ i, text: "" });
+          scrollFollow();
+          for (const ch of item.text) {
+            if (cancelled.current) return;
+            acc += ch;
+            setTyping({ i, text: acc });
+            scrollFollow();
+            await wait(ch === " " ? FRIEND.SPACE : FRIEND_PUNCT.test(ch) ? FRIEND.PUNCT : FRIEND.TYPE_PER);
+          }
+          setTyping(null);
+          setShown(i + 1);
+          await wait(FRIEND.TYPE_POST);
+        } else {
+          setShown(i + 1);
+          scrollFollow();
+          await wait(item.t === "pop" ? FRIEND.POP : FRIEND.REVEAL);
+        }
+      }
+      if (!cancelled.current) setFinished(true);
+    })();
+    return () => {
+      cancelled.current = true;
+      list.forEach((t) => clearTimeout(t));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const typingItem = typing ? script[typing.i] : null;
+
+  return (
+    <div className={styles.friendRoot}>
+      {phase === "thinking" ? (
+        <div className={styles.friendThinking}>
+          <div className={styles.friendThink} style={{ animationDelay: ".1s" }}>
+            Okay — reading it now.
+          </div>
+          <div className={styles.friendThink} style={{ animationDelay: "1.4s" }}>
+            Looking at what they actually do&hellip;
+          </div>
+        </div>
+      ) : (
+        <div className={styles.friendFlow}>
+          {script.slice(0, shown).map((item, i) => (
+            <FriendTurn key={i} item={item} emailed={emailed} onReply={onReply} />
+          ))}
+          {typingItem && typingItem.t === "type" && (
+            <div className={styles.friendTurn}>
+              <p
+                className={`${styles.friendSay} ${typingItem.cls === "accent" ? styles.friendAccent : styles.friendBig} ${styles.friendCaret}`}
+              >
+                {typing!.text}
+              </p>
+            </div>
+          )}
+          <div ref={endRef} />
+        </div>
+      )}
+      {!finished && (
+        <button className={styles.friendSkip} onClick={showAll}>
+          Show it all
+        </button>
+      )}
+    </div>
+  );
+}
+
+function FriendTurn({
+  item,
+  emailed,
+  onReply,
+}: {
+  item: FriendItem;
+  emailed: boolean;
+  onReply: () => void;
+}) {
+  if (item.t === "type") {
+    return (
+      <div className={styles.friendTurn}>
+        <p className={`${styles.friendSay} ${item.cls === "accent" ? styles.friendAccent : styles.friendBig}`}>
+          {item.text}
+        </p>
+      </div>
+    );
+  }
+  if (item.t === "pop") {
+    const cls =
+      item.cls === "small"
+        ? styles.friendSmall
+        : `${styles.friendSay} ${styles.friendSoft}`;
+    return (
+      <div className={styles.friendTurn}>
+        <p className={`${cls} ${styles.friendPop}`}>{item.text}</p>
+      </div>
+    );
+  }
+  if (item.t === "bar") {
+    const color = friendToneColor(item.bar.tone);
+    return (
+      <div className={styles.friendTurn}>
+        <div className={styles.friendAside}>
+          <div className={styles.friendAsideHead}>
+            <span className={styles.friendAsideName}>{item.bar.label}</span>
+            <span className={styles.friendAsideVerdict} style={{ color }}>
+              {item.bar.tag}
+            </span>
+          </div>
+          <div className={styles.friendTrack}>
+            <div className={styles.friendFill} style={{ width: `${item.bar.level}%`, background: color }} />
+          </div>
+          <p>{item.bar.caption}</p>
+        </div>
+      </div>
+    );
+  }
+  if (item.t === "card") {
+    return (
+      <div className={styles.friendTurn}>
+        <div className={styles.friendAside}>
+          <div className={styles.friendTiny}>{item.card.kind}</div>
+          <h3 className={styles.friendCardTitle}>{item.card.title}</h3>
+          <p>{item.card.body}</p>
+        </div>
+      </div>
+    );
+  }
+  if (item.t === "move") {
+    return (
+      <div className={styles.friendTurn}>
+        <div className={styles.friendMove}>
+          <div className={styles.friendTiny}>If you want a move</div>
+          <p>{item.text}</p>
+        </div>
+      </div>
+    );
+  }
+  // cta
+  return (
+    <div className={styles.friendTurn}>
+      <div className={styles.friendCta}>
+        <button className={`${styles.friendBtn} ${styles.friendBtnPrimary}`} onClick={onReply}>
+          ✍️ Help me reply
+        </button>
+        <Link href="/" className={`${styles.friendBtn} ${styles.friendBtnDark}`}>
+          Read another conversation
+        </Link>
+        <Link href="/signin" className={`${styles.friendBtn} ${styles.friendBtnGhost}`}>
+          See how this changes over time
+        </Link>
+        <p className={styles.friendFine}>
+          {emailed ? "Saved — a copy's in your inbox. " : "Saved here for you. "}
+          Only you see it.
+        </p>
+      </div>
+    </div>
   );
 }
 
