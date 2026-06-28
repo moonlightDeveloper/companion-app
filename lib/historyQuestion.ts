@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Read } from "@/types";
-import { modelFor } from "./models";
+import { modelFor, cachedSystem } from "./models";
 
 export class HistoryQuestionError extends Error {}
 
@@ -47,7 +47,7 @@ export async function historyQuestion(read: Read, nickname: string): Promise<str
     const response = await client.messages.create({
       model: modelFor("history"),
       max_tokens: 150,
-      system: SYSTEM,
+      system: cachedSystem(SYSTEM),
       messages: [
         {
           role: "user",

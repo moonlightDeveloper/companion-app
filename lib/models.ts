@@ -11,7 +11,21 @@
  * `MODEL_FAST`, and per-path `MODEL_<PATH>` overrides (highest priority) so every
  * path stays swappable as the frontier shifts.
  */
+import type Anthropic from "@anthropic-ai/sdk";
+
 export type ModelPath = "extract" | "analyze" | "reply" | "pattern" | "clarify" | "history";
+
+/**
+ * FLAG-40: a system prompt marked for prompt caching. The stable prefix is cached
+ * (5-min TTL); after the first call it bills at 0.1× input instead of 1×. Below
+ * the ~1024-token cache minimum the marker is silently ignored, so marking a
+ * short prompt is harmless — it just starts caching if the prompt ever grows.
+ * Today only analyze's ~1,275-token system actually caches; the rest are marked
+ * for consistency + future-proofing.
+ */
+export function cachedSystem(text: string): Anthropic.TextBlockParam[] {
+  return [{ type: "text", text, cache_control: { type: "ephemeral" } }];
+}
 
 const STRONG = process.env.MODEL || "claude-sonnet-4-6";
 const FAST = process.env.MODEL_FAST || "claude-haiku-4-5";

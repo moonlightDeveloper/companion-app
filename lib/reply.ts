@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ReplyDraft } from "@/types";
-import { modelFor } from "./models";
+import { modelFor, cachedSystem } from "./models";
 
 /** Thrown when the model call or JSON parsing fails. */
 export class ReplyError extends Error {}
@@ -38,7 +38,7 @@ export async function draftReplies(params: {
     const response = await client.messages.create({
       model: modelFor("reply"),
       max_tokens: 1024,
-      system: systemPrompt(name),
+      system: cachedSystem(systemPrompt(name)),
       messages: [
         {
           role: "user",
