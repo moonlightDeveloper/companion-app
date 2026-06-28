@@ -8,7 +8,7 @@ import type {
   ReadCard,
 } from "@/types";
 import { SYSTEM_PROMPT, buildUserMessage, type Clarification } from "@/lib/prompt";
-import { modelFor } from "./models";
+import { modelFor, cachedSystem } from "./models";
 
 /** Thrown when the model call or JSON parsing fails. */
 export class AnalyzeError extends Error {}
@@ -33,7 +33,7 @@ export async function analyze(
     const response = await client.messages.create({
       model: modelFor("analyze"),
       max_tokens: 2000,
-      system: SYSTEM_PROMPT,
+      system: cachedSystem(SYSTEM_PROMPT),
       messages: [{ role: "user", content: buildUserMessage(intake, clarifications) }],
     });
     text = response.content

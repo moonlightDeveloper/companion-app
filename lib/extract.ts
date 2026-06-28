@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Transcript, TranscriptMessage } from "@/types";
-import { modelFor } from "./models";
+import { modelFor, cachedSystem } from "./models";
 
 /** Thrown when the vision call fails or returns no transcript. */
 export class ExtractError extends Error {}
@@ -112,7 +112,7 @@ export async function extractTranscript(
       // ~2k+ output tokens; 2000 was a real ceiling. We only pay for tokens
       // actually generated, so the headroom is ~free.
       max_tokens: 8000,
-      system: systemPrompt(name),
+      system: cachedSystem(systemPrompt(name)),
       messages: [{ role: "user", content }],
       tools: [transcriptTool(name)],
       tool_choice: { type: "tool", name: "emit_transcript" },

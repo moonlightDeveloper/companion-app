@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Read } from "@/types";
-import { modelFor } from "./models";
+import { modelFor, cachedSystem } from "./models";
 
 export class PatternError extends Error {}
 
@@ -39,7 +39,7 @@ export async function synthesizePattern(reads: Read[], nickname: string): Promis
     const response = await client.messages.create({
       model: modelFor("pattern"),
       max_tokens: 200,
-      system: SYSTEM,
+      system: cachedSystem(SYSTEM),
       messages: [
         {
           role: "user",

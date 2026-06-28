@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { modelFor } from "./models";
+import { modelFor, cachedSystem } from "./models";
 
 export class ClarifyError extends Error {}
 
@@ -43,7 +43,7 @@ export async function clarifyQuestions(
     const response = await client.messages.create({
       model: modelFor("clarify"),
       max_tokens: 500,
-      system: SYSTEM,
+      system: cachedSystem(SYSTEM),
       messages: [
         {
           role: "user",
