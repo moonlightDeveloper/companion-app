@@ -1621,9 +1621,19 @@ function WhatsAppImport({
       return;
     }
     const chat = parseWhatsAppExport(raw);
-    if (chat.messages.length === 0 || chat.senders.length < 2) {
+    // Media lines are EXPECTED and fine — the parser turns them into [media] /
+    // [voice message] gaps; they are NEVER a reason to reject. The only real
+    // failures are: nothing parsed, or only one side present (so the
+    // "which one is you?" step can't work).
+    if (chat.messages.length === 0) {
       setError(
-        "That doesn't look like a two-person WhatsApp export — make sure you chose “Without Media” and uploaded the chat file.",
+        "I couldn't read any messages from that file. Upload the .txt WhatsApp gives you from the chat's “Export Chat” — photos and voice notes just show up as gaps, that's fine.",
+      );
+      return;
+    }
+    if (chat.senders.length < 2) {
+      setError(
+        "That looks like only one side of the conversation. Export the full chat between you and them, then upload it here.",
       );
       return;
     }
