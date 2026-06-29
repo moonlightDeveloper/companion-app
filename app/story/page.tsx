@@ -2592,6 +2592,9 @@ function ReadBody({ read }: { read: Read }) {
 // Manual edit-and-reread entry point is hidden for now (mechanism kept dormant —
 // see FixBackstop + onFix). Flip to true to re-expose it; no rebuild needed.
 const SHOW_FIX_BACKSTOP = false;
+// Reply-assist entry hidden for now (mechanism kept dormant — see ReplyHelper +
+// the replyOpen wiring). Flip to true to re-expose "Help me reply".
+const SHOW_REPLY_HELP = false;
 
 /* ---------- FLAG-48: "friend talking it through" report delivery ---------- */
 // Exact timings ported from the approved report-friend-final.html.
@@ -2767,14 +2770,16 @@ function FriendRead({
           padding handles the iPhone home bar. */}
       {finished && (
         <div className={styles.friendActions}>
-          <button className={`${styles.friendBtn} ${styles.friendBtnPrimary}`} onClick={onReply}>
-            ✍️ Help me reply
-          </button>
-          <Link href="/" className={`${styles.friendBtn} ${styles.friendBtnDark}`}>
-            Read another conversation
-          </Link>
-          <Link href="/signin" className={`${styles.friendBtn} ${styles.friendBtnGhost}`}>
-            See how this changes over time
+          {/* Reply-assist entry hidden for now (SHOW_REPLY_HELP=false); the
+              ReplyHelper mechanism (§2.6) stays intact + dormant — flip the flag to
+              re-expose, no rebuild. Keeping only the verify-your-email action. */}
+          {SHOW_REPLY_HELP && (
+            <button className={`${styles.friendBtn} ${styles.friendBtnDark}`} onClick={onReply}>
+              ✍️ Help me reply
+            </button>
+          )}
+          <Link href="/signin" className={`${styles.friendBtn} ${styles.friendBtnPrimary}`}>
+            Verify your email to keep your reads
           </Link>
         </div>
       )}
