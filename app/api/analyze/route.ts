@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { Intake } from "@/types";
 import { analyze, guardRead, AnalyzeError } from "@/lib/analyze";
-import { getOrCreatePerson, createReport, updateReport, personOwnedBy, upsertUser } from "@/lib/db";
+import { getOrCreatePerson, createReport, updateReport, personOwnedBy, upsertUser, getUserEmail } from "@/lib/db";
 import {
   getSession,
   createSoftValue,
@@ -97,7 +97,13 @@ export async function POST(request: Request) {
   let personId: string | undefined;
   let reportId: string | undefined;
   let mintedUserId: string | null = null; // set when we mint a soft identity
-  const userId = session?.userId ?? null;
+  let userId = session?.userId ?? null;
+  // A session can outlive its user row (the account was deleted — e.g. delete-my-data
+  // or an admin wipe — while the browser kept the cookie). Writing under a missing
+  // user_id silently fails the FK and persists nothing. Treat a stale session as
+  // anonymous so the mint branch below re-creates the user under the email and
+  // refreshes the cookies — the session self-heals instead of failing forever.
+  if (userId && !(await getUserEmail(userId))) userId = null;
   if (userId) {
     try {
       // Regenerate-in-place: if a reportId is supplied (a backstop fix), update
