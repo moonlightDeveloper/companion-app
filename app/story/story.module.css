@@ -892,11 +892,16 @@
   line-height: 1.45;
   color: var(--f-ink);
 }
-.friendCta {
-  opacity: 0;
-  transform: translateY(10px);
-  animation: friendRise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
-  margin-top: 8px;
+/* Save confirmation — closing line after the report. */
+.friendSaved {
+  margin-top: 18px;
+  text-align: center;
+}
+/* FLAG-48 actions: normal inline buttons at the END of the read — they scroll with
+   the content (NOT sticky), so nothing is covered and there's no reserved dead space. */
+.friendActions {
+  margin-top: 24px;
+  animation: friendRise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 .friendBtn {
   width: 100%;
@@ -970,10 +975,79 @@
   .friendPop,
   .friendAside,
   .friendMove,
-  .friendCta,
+  .friendActions,
   .friendFill {
     animation-duration: 0.01ms !important;
     opacity: 1 !important;
     transform: none !important;
   }
+}
+
+/* FLAG-48 fix: on mobile, remove the inner scroll container so the PAGE scrolls
+   (one scroll, no nested scroll trap). The phone-frame card grows with content and
+   the body scrolls; desktop keeps the fixed card. */
+@media (max-width: 480px) {
+  .stage {
+    padding: 0;
+    align-items: start;
+  }
+  .phone {
+    width: 100%;
+    height: auto;
+    min-height: 100vh;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    overflow: visible;
+  }
+  .main {
+    overflow: visible;
+  }
+}
+
+/* FLAG-48 reply screen: a full-viewport takeover rendered OVER the preserved read
+   (the read stays mounted underneath; back restores it untouched). Driven by the
+   `reply` screen state, not a modal. */
+.replyScreen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--paper);
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.replyBar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: rgba(255, 250, 247, 0.94);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+.replyBarTitle {
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--ink);
+}
+.replyBody {
+  width: min(430px, 100%);
+  margin: 0 auto;
+  padding: 18px 20px calc(28px + env(safe-area-inset-bottom, 0px));
+}
+
+/* FLAG-48 reply drafts: equal-height cards. grid-auto-rows:1fr makes every card
+   the height of the tallest; each card is a flex column so its textarea fills the
+   extra space (short drafts get a taller field, not a short ragged card). */
+.draftGrid {
+  display: grid;
+  grid-auto-rows: 1fr;
+  gap: 12px;
+  margin-top: 14px;
+}
+.draftCard {
+  display: flex;
+  flex-direction: column;
 }

@@ -19,8 +19,7 @@ export type FriendItem =
   | { t: "pop"; cls: "small" | "soft"; text: string }
   | { t: "bar"; bar: ReadBar }
   | { t: "card"; card: ReadCard }
-  | { t: "move"; text: string }
-  | { t: "cta" };
+  | { t: "move"; text: string };
 
 const DISCLAIMER =
   "Going off what you shared — I'm reading what they do, not guessing how they feel.";
@@ -73,7 +72,9 @@ export function toScript(read: Read, opts?: { trimmed?: boolean; delta?: string 
   if (rest) items.push({ t: "pop", cls: "soft", text: rest });
 
   if (read.suggested_move) items.push({ t: "move", text: read.suggested_move });
-  items.push({ t: "cta" });
+  // The action buttons (Help me reply / Read another / over time) are NOT a script
+  // turn — they render as a sticky footer in FriendRead (FLAG-48 sticky-actions),
+  // reachable while scrolling, shown once the unfold finishes.
 
   return items;
 }

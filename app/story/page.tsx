@@ -49,7 +49,8 @@ type Screen =
   | "feeling"
   | "email"
   | "clarify"
-  | "read";
+  | "read"
+  | "reply";
 
 const FLOW: Screen[] = [
   "cover",
@@ -160,7 +161,9 @@ export default function Story() {
   const [error, setError] = useState("");
   const [email, setEmail] = useState("");
   const [consent, setConsent] = useState(false);
-  const [emailed, setEmailed] = useState(true);
+  // Email-delivery flag still tracked from the save response; no longer surfaced
+  // on the read screen (the closing line is the cross-device verify offer).
+  const [, setEmailed] = useState(true);
   const [roster, setRoster] = useState<RosterPerson[]>([]);
   const [personId, setPersonId] = useState<string | undefined>(undefined);
   const [signedIn, setSignedIn] = useState(false);
@@ -855,13 +858,14 @@ export default function Story() {
               />
             ) : null)}
 
-          {screen === "read" && (
+          {/* ReadScreen stays mounted during the reply screen so the read is
+              preserved underneath — same scroll, no re-unfold (FLAG-48 reply). */}
+          {(screen === "read" || screen === "reply") && (
             <ReadScreen
               name={name}
               status={status}
               read={read}
               error={error}
-              emailed={emailed}
               trimmed={readTrimmed}
               delta={delta}
               conversation={answers.conversation}
@@ -873,6 +877,17 @@ export default function Story() {
                 setStatus("idle"); // re-trigger produceRead → updates the same report
               }}
               onRetry={produceRead}
+              onReply={() => go("reply")}
+            />
+          )}
+
+          {/* Reply takeover: a real screen (screen state + back), rendered over the
+              preserved read. Back returns to the read exactly as left. */}
+          {screen === "reply" && (
+            <ReplyScreen
+              name={name}
+              conversation={answers.conversation}
+              onBack={back}
             />
           )}
           </>
@@ -2180,37 +2195,6 @@ function WelcomeScreen({
   );
 }
 
-function XDeviceOffer() {
-  const [show, setShow] = useState(false);
-  useEffect(() => {
-    try {
-      if (!localStorage.getItem("companion_xdevice_offered")) setShow(true);
-    } catch {}
-  }, []);
-  if (!show) return null;
-  const dismiss = () => {
-    try {
-      localStorage.setItem("companion_xdevice_offered", "1");
-    } catch {}
-    setShow(false);
-  };
-  return (
-    <p className={styles.subtext} style={{ marginTop: 12, textAlign: "center" }}>
-      <Link href="/signin" onClick={dismiss} style={{ color: "var(--accent)" }}>
-        Want your reads on any device? Verify your email &rarr;
-      </Link>{" "}
-      <button
-        className={styles.ghost}
-        style={{ padding: "0 6px" }}
-        onClick={dismiss}
-        aria-label="Dismiss"
-      >
-        ✕
-      </button>
-    </p>
-  );
-}
-
 function EmailScreen({
   name,
   email,
@@ -2431,29 +2415,28 @@ function ReadScreen({
   status,
   read,
   error,
-  emailed,
   trimmed,
   delta,
   conversation,
   canFix,
   onFix,
   onRetry,
+  onReply,
 }: {
   name: string;
   status: Status;
   read: Read | null;
   error: string;
-  emailed: boolean;
   trimmed: boolean;
   delta: string | null;
   conversation: string;
   canFix: boolean;
   onFix: (text: string) => void;
   onRetry: () => void;
+  onReply: () => void;
 }) {
-  // FLAG-48: "Help me reply" in the friend delivery reveals the existing
-  // ReplyHelper (§2.6) — no new reply logic.
-  const [replyOpen, setReplyOpen] = useState(false);
+  // FLAG-48: "Help me reply" navigates to the dedicated reply screen (onReply →
+  // go("reply")); the read stays mounted underneath and is restored on back.
   if (status === "loading" || status === "idle") {
     return (
       <section className={styles.screen}>
@@ -2527,25 +2510,26 @@ function ReadScreen({
       {/* FLAG-48: the read is delivered as a friend talking it through. Pure
           presentation — the analysis/conclusions are unchanged (Option A maps the
           existing Read fields to typed/pop/reveal turns). */}
-      <FriendRead read={read} emailed={emailed} trimmed={trimmed} delta={delta} onReply={() => setReplyOpen(true)} />
-
-      {/* "Help me reply" reveals the existing reply-assist (§2.6). */}
-      {replyOpen && conversation.trim() && (
-        <ReplyHelper name={name} conversation={conversation} />
-      )}
+      <FriendRead
+        read={read}
+        trimmed={trimmed}
+        delta={delta}
+        canReply={!!conversation.trim()}
+        onReply={onReply}
+      />
 
       {/* Backstop: catch a confident misread (wrong-side attribution) or enrich
-          voice-message gaps. */}
-      {canFix && conversation.trim() && (
+          voice-message gaps. ENTRY POINT HIDDEN (SHOW_FIX_BACKSTOP=false) — the
+          edit-and-reread mechanism (FixBackstop + onFix → in-place regen) stays
+          intact and dormant; flip the flag to re-expose it without a rebuild. */}
+      {SHOW_FIX_BACKSTOP && canFix && conversation.trim() && (
         <FixBackstop
           conversation={conversation}
           voice={conversation.includes("[voice message]")}
           onFix={onFix}
         />
       )}
-
-      {/* Cross-device upgrade — offered once, after value, never a wall. */}
-      <XDeviceOffer />
+      {/* The cross-device verify offer is the read's closing line (in FriendRead). */}
     </section>
   );
 }
@@ -2587,6 +2571,10 @@ function ReadBody({ read }: { read: Read }) {
   );
 }
 
+// Manual edit-and-reread entry point is hidden for now (mechanism kept dormant —
+// see FixBackstop + onFix). Flip to true to re-expose it; no rebuild needed.
+const SHOW_FIX_BACKSTOP = false;
+
 /* ---------- FLAG-48: "friend talking it through" report delivery ---------- */
 // Exact timings ported from the approved report-friend-final.html.
 const FRIEND = {
@@ -2600,15 +2588,15 @@ const friendToneColor = (tone: string) =>
 
 function FriendRead({
   read,
-  emailed,
   trimmed,
   delta,
+  canReply,
   onReply,
 }: {
   read: Read;
-  emailed: boolean;
   trimmed: boolean;
   delta: string | null;
+  canReply: boolean;
   onReply: () => void;
 }) {
   const script = useMemo(() => toScript(read, { trimmed, delta }), [read, trimmed, delta]);
@@ -2733,7 +2721,7 @@ function FriendRead({
       ) : (
         <div className={styles.friendFlow}>
           {script.slice(0, shown).map((item, i) => (
-            <FriendTurn key={i} item={item} emailed={emailed} onReply={onReply} />
+            <FriendTurn key={i} item={item} />
           ))}
           {typingItem && typingItem.t === "type" && (
             <div className={styles.friendTurn}>
@@ -2744,7 +2732,37 @@ function FriendRead({
               </p>
             </div>
           )}
+          {/* Cross-device verify offer: the closing line after the whole report,
+              non-sticky. */}
+          {finished && (
+            <p className={`${styles.friendFine} ${styles.friendSaved}`}>
+              <Link href="/signin" style={{ color: "var(--f-accent)" }}>
+                Want your reads on any device? Verify your email &rarr;
+              </Link>
+            </p>
+          )}
           <div ref={endRef} />
+        </div>
+      )}
+      {/* FLAG-48 sticky actions: reachable while scrolling, shown once the unfold
+          finishes (so it doesn't compete with the typing). Sticky-bottom as the
+          last in-flow child — self-clearing, no content hidden behind it; safe-area
+          padding handles the iPhone home bar. */}
+      {finished && (
+        <div className={styles.friendActions}>
+          {/* Only show "Help me reply" when the conversation is actually in hand —
+              never a visible-but-dead button. */}
+          {canReply && (
+            <button className={`${styles.friendBtn} ${styles.friendBtnPrimary}`} onClick={onReply}>
+              ✍️ Help me reply
+            </button>
+          )}
+          <Link href="/" className={`${styles.friendBtn} ${styles.friendBtnDark}`}>
+            Read another conversation
+          </Link>
+          <Link href="/signin" className={`${styles.friendBtn} ${styles.friendBtnGhost}`}>
+            See how this changes over time
+          </Link>
         </div>
       )}
       {!finished && (
@@ -2756,15 +2774,7 @@ function FriendRead({
   );
 }
 
-function FriendTurn({
-  item,
-  emailed,
-  onReply,
-}: {
-  item: FriendItem;
-  emailed: boolean;
-  onReply: () => void;
-}) {
+function FriendTurn({ item }: { item: FriendItem }) {
   if (item.t === "type") {
     return (
       <div className={styles.friendTurn}>
@@ -2815,33 +2825,12 @@ function FriendTurn({
       </div>
     );
   }
-  if (item.t === "move") {
-    return (
-      <div className={styles.friendTurn}>
-        <div className={styles.friendMove}>
-          <div className={styles.friendTiny}>If you want a move</div>
-          <p>{item.text}</p>
-        </div>
-      </div>
-    );
-  }
-  // cta
+  // move
   return (
     <div className={styles.friendTurn}>
-      <div className={styles.friendCta}>
-        <button className={`${styles.friendBtn} ${styles.friendBtnPrimary}`} onClick={onReply}>
-          ✍️ Help me reply
-        </button>
-        <Link href="/" className={`${styles.friendBtn} ${styles.friendBtnDark}`}>
-          Read another conversation
-        </Link>
-        <Link href="/signin" className={`${styles.friendBtn} ${styles.friendBtnGhost}`}>
-          See how this changes over time
-        </Link>
-        <p className={styles.friendFine}>
-          {emailed ? "Saved — a copy's in your inbox. " : "Saved here for you. "}
-          Only you see it.
-        </p>
+      <div className={styles.friendMove}>
+        <div className={styles.friendTiny}>If you want a move</div>
+        <p>{item.text}</p>
       </div>
     </div>
   );
@@ -2898,8 +2887,48 @@ function FixBackstop({
   );
 }
 
+/**
+ * FLAG-48: the reply screen — a full takeover rendered over the preserved read.
+ * Driven by the `reply` screen state (go("reply") / back()), so the read stays
+ * mounted underneath and is restored exactly on back. Hosts the real ReplyHelper.
+ */
+function ReplyScreen({
+  name,
+  conversation,
+  onBack,
+}: {
+  name: string;
+  conversation: string;
+  onBack: () => void;
+}) {
+  return (
+    <div className={styles.replyScreen}>
+      <div className={styles.replyBar}>
+        <button className={styles.back} aria-label="Back to your read" onClick={onBack}>
+          &#8249;
+        </button>
+        <div className={styles.replyBarTitle}>Help me reply</div>
+      </div>
+      <div className={styles.replyBody}>
+        <p className={styles.subtext} style={{ marginTop: 0, marginBottom: 4 }}>
+          Drafting a reply to {name}. Tell me what you want to land.
+        </p>
+        <ReplyHelper name={name} conversation={conversation} />
+        {/* Second back at the END, after the drafts, so a scrolled-down user can
+            leave without scrolling up. Same behaviour as the top back. */}
+        <button
+          className={styles.secondary}
+          style={{ marginTop: 20 }}
+          onClick={onBack}
+        >
+          &#8249; Back to your read
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ReplyHelper({ name, conversation }: { name: string; conversation: string }) {
-  const [open, setOpen] = useState(false);
   const [intent, setIntent] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [error, setError] = useState("");
@@ -2925,18 +2954,9 @@ function ReplyHelper({ name, conversation }: { name: string; conversation: strin
     }
   };
 
-  if (!open) {
-    return (
-      <button
-        className={styles.secondary}
-        style={{ display: "block", width: "100%", marginTop: 12 }}
-        onClick={() => setOpen(true)}
-      >
-        Want me to draft what you&rsquo;d send?
-      </button>
-    );
-  }
-
+  // One reply path: this is the real draft UI, opened directly by the "Help me
+  // reply" button (live read) or shown inline on a recent past report. No
+  // intermediate "Want me to draft…" prompt.
   return (
     <div className={styles.insight} style={{ marginTop: 12 }}>
       <div className={styles.k}>Help me reply</div>
@@ -2960,9 +2980,15 @@ function ReplyHelper({ name, conversation }: { name: string; conversation: strin
       {status === "error" && (
         <p className={styles.subtext} style={{ color: "var(--red)" }}>{error}</p>
       )}
-      {drafts.map((d, i) => (
-        <DraftCard key={i} draft={d} />
-      ))}
+      {drafts.length > 0 && (
+        // Equal-height cards: grid-auto-rows:1fr sizes every card to the TALLEST,
+        // so shorter suggestions get the same height (extra space), not ragged.
+        <div className={styles.draftGrid}>
+          {drafts.map((d, i) => (
+            <DraftCard key={i} draft={d} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -2971,7 +2997,7 @@ function DraftCard({ draft }: { draft: ReplyDraft }) {
   const [text, setText] = useState(draft.text);
   const [copied, setCopied] = useState(false);
   return (
-    <div style={{ marginTop: 12 }}>
+    <div className={styles.draftCard}>
       <div className={styles.barhead}>
         <b>{draft.tone}</b>
         <button
@@ -2989,9 +3015,11 @@ function DraftCard({ draft }: { draft: ReplyDraft }) {
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
+      {/* flex:1 → the textarea fills the equal-height card, so a short draft just
+          gets a taller field rather than a short card. */}
       <textarea
         className={styles.textarea}
-        style={{ minHeight: 72 }}
+        style={{ flex: 1, minHeight: 72 }}
         value={text}
         onChange={(e) => setText(e.target.value)}
       />
