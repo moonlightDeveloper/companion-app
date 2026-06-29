@@ -192,7 +192,9 @@ export default function Story() {
   // FLAG-46: set when this read is a detected continuation of a prior one — drives
   // suppressing the FLAG-34 question and fetching the what-changed delta.
   const continuationRef = useRef(false);
+  const identicalRef = useRef(false); // FLAG-46 Bug 2: identical re-send (chat-keyed)
   const [delta, setDelta] = useState<DeltaChange[] | null>(null);
+  const [nothingNew, setNothingNew] = useState(false);
   // FLAG-36: mirror of fromPerson, readable inside the []-dep startBgRead.
   const fromPersonRef = useRef(false);
   useEffect(() => {
@@ -379,7 +381,12 @@ export default function Story() {
       // newest, not this one) and before reveal (so it's in the initial script).
       // Never blocks: any failure → no delta, just a normal read.
       let deltaChanges: DeltaChange[] = [];
-      if (continuationRef.current && personId) {
+      const isIdenticalResend = continuationRef.current && identicalRef.current;
+      // FLAG-46 Bug 2: an identical re-send (same chat, no new messages) shows NO
+      // before/after — the delta is skipped entirely. Keyed on the conversation,
+      // so read/sub-score variance can't manufacture a fake change. Only a genuine
+      // continuation (new tail) fetches the delta.
+      if (continuationRef.current && !identicalRef.current && personId) {
         try {
           const d = await fetch("/api/delta", {
             method: "POST",
@@ -393,6 +400,7 @@ export default function Story() {
       }
       // Only a REAL set of concrete changes; empty → no before/after shown.
       setDelta(deltaChanges.length > 0 ? deltaChanges : null);
+      setNothingNew(isIdenticalResend);
 
       setRead(read);
       // FLAG-43: was the read generated from a windowed (capped) conversation?
@@ -469,12 +477,17 @@ export default function Story() {
       // two never both reference the prior behaviour. Runs here, before any
       // question is built, so it can't fire after the question already showed.
       continuationRef.current = false;
+      identicalRef.current = false;
       if (fromPerson && personId) {
         try {
           const prior = await getRecentConversations(personId, 1);
           if (prior[0]) {
             const c = detectContinuation(prior[0].text, answers.conversation);
             continuationRef.current = c.isContinuation;
+            // FLAG-46 Bug 2: an identical re-send (same messages, no new tail). Keyed
+            // on the CHAT, not the reading — so read/sub-score variance can't fake a
+            // change. Gates the delta off entirely (nothing new to show).
+            identicalRef.current = c.identical;
           }
         } catch {
           /* detection failure → normal read + normal question (safe fallthrough) */
@@ -869,6 +882,7 @@ export default function Story() {
               error={error}
               trimmed={readTrimmed}
               delta={delta}
+              nothingNew={nothingNew}
               conversation={answers.conversation}
               canFix={regenCount < 2}
               onFix={(text) => {
@@ -2418,6 +2432,7 @@ function ReadScreen({
   error,
   trimmed,
   delta,
+  nothingNew,
   conversation,
   canFix,
   onFix,
@@ -2430,6 +2445,7 @@ function ReadScreen({
   error: string;
   trimmed: boolean;
   delta: DeltaChange[] | null;
+  nothingNew: boolean;
   conversation: string;
   canFix: boolean;
   onFix: (text: string) => void;
@@ -2515,6 +2531,7 @@ function ReadScreen({
         read={read}
         trimmed={trimmed}
         delta={delta}
+        nothingNew={nothingNew}
         canReply={!!conversation.trim()}
         onReply={onReply}
       />
@@ -2591,16 +2608,21 @@ function FriendRead({
   read,
   trimmed,
   delta,
+  nothingNew,
   canReply,
   onReply,
 }: {
   read: Read;
   trimmed: boolean;
   delta: DeltaChange[] | null;
+  nothingNew: boolean;
   canReply: boolean;
   onReply: () => void;
 }) {
-  const script = useMemo(() => toScript(read, { trimmed, delta }), [read, trimmed, delta]);
+  const script = useMemo(
+    () => toScript(read, { trimmed, delta, nothingNew }),
+    [read, trimmed, delta, nothingNew],
+  );
   const [phase, setPhase] = useState<"thinking" | "flow">("thinking");
   const [shown, setShown] = useState(0);
   const [typing, setTyping] = useState<{ i: number; text: string } | null>(null);
@@ -2847,6 +2869,22 @@ function FriendTurn({ item }: { item: FriendItem }) {
               </div>
             </div>
           ))}
+        </div>
+      </div>
+    );
+  }
+  if (item.t === "nothingNew") {
+    // FLAG-46 Bug 2: identical re-send → no before/after, just say so and nudge
+    // toward a fresh take. (The "Read another conversation" action sits below.)
+    return (
+      <div className={styles.friendTurn}>
+        <div className={styles.friendAside}>
+          <div className={styles.friendTiny}>Since last time</div>
+          <p>
+            This is the same conversation you showed me last time — nothing new since
+            then, so the read hasn&rsquo;t changed. When something new happens, bring
+            me the updated chat and I&rsquo;ll tell you what moved.
+          </p>
         </div>
       </div>
     );
