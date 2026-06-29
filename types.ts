@@ -66,6 +66,15 @@ export interface Transcript {
   notAChat?: boolean;
 }
 
+/** FLAG-46: one concrete behavioural change, paired before → now. Both sides are
+ *  specific observable behaviours (never a vague "he changed"). */
+export interface DeltaChange {
+  /** The specific observable behaviour in the PRIOR read. */
+  before: string;
+  /** The specific observable behaviour NOW. */
+  now: string;
+}
+
 /** One editable reply draft in a given tone (from /api/reply). */
 export interface ReplyDraft {
   tone: string;
