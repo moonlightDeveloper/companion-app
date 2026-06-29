@@ -48,6 +48,12 @@ function toContent(line: string): string {
   return s;
 }
 
+/** Exposed for the gate-1 diagnostic harness only — the normalized message-content
+ *  array detection compares on (timestamps/labels/placeholders stripped). */
+export function debugMessageContents(conversation: string): string[] {
+  return messageContents(conversation);
+}
+
 function messageContents(conversation: string): string[] {
   return conversation.split("\n").map(toContent).filter((l) => l.length > 0);
 }
