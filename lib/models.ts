@@ -13,7 +13,7 @@
  */
 import type Anthropic from "@anthropic-ai/sdk";
 
-export type ModelPath = "extract" | "analyze" | "reply" | "pattern" | "clarify" | "history";
+export type ModelPath = "extract" | "analyze" | "reply" | "pattern" | "clarify" | "history" | "delta";
 
 /**
  * FLAG-40: a system prompt marked for prompt caching. The stable prefix is cached
@@ -36,6 +36,7 @@ const PATH_MODEL: Record<ModelPath, string> = {
   pattern: STRONG, // §2.5 cross-report synthesis
   clarify: STRONG, // §2.11 verdict-forking judgment
   history: STRONG, // FLAG-34 single-read pre-read question — nuance/voice
+  delta: STRONG, // FLAG-46 what-changed delta — nuance/voice
   // extract stays STRONG until the FLAG-24 accuracy gate (real dense screenshots)
   // proves a fast model keeps message/attribution/ordering parity. Flip to FAST
   // there, not before.

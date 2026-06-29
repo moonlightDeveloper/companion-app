@@ -21,7 +21,8 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { Intake, Read, ReplyDraft, TranscriptMessage } from "@/types";
-import { saveConversation, evictExpired, getConversation } from "@/lib/localConversations";
+import { saveConversation, evictExpired, getConversation, getRecentConversations } from "@/lib/localConversations";
+import { detectContinuation } from "@/lib/continuation";
 import { MAX_IMAGES } from "@/lib/cap";
 import { parseWhatsAppExport, type ParsedChat } from "@/lib/whatsapp";
 import { toScript, type FriendItem } from "@/lib/friendScript";
@@ -185,6 +186,10 @@ export default function Story() {
   // FLAG-34: the backgrounded history question (from-person only), resolved to
   // the question string ("" if none). Kicked at "New report", consumed at clarify.
   const historyQRef = useRef<Promise<string> | null>(null);
+  // FLAG-46: set when this read is a detected continuation of a prior one — drives
+  // suppressing the FLAG-34 question and fetching the what-changed delta.
+  const continuationRef = useRef(false);
+  const [delta, setDelta] = useState<string | null>(null);
   // FLAG-36: mirror of fromPerson, readable inside the []-dep startBgRead.
   const fromPersonRef = useRef(false);
   useEffect(() => {
@@ -365,6 +370,26 @@ export default function Story() {
         read = await freshPreview();
       }
       bgReadRef.current = null;
+
+      // FLAG-46: on a detected continuation, fetch the "what changed since last
+      // time" delta BEFORE the save below (so /api/delta reads the PRIOR report as
+      // newest, not this one) and before reveal (so it's in the initial script).
+      // Never blocks: any failure → no delta, just a normal read.
+      let deltaText: string | null = null;
+      if (continuationRef.current && personId) {
+        try {
+          const d = await fetch("/api/delta", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ read, personId, nickname: answers.name }),
+          }).then((r) => r.json());
+          deltaText = typeof d?.delta === "string" ? d.delta : null;
+        } catch {
+          /* no delta → normal read */
+        }
+      }
+      setDelta(deltaText);
+
       setRead(read);
       // FLAG-43: was the read generated from a windowed (capped) conversation?
       // Drives the transparency line; the stored conversation is still full.
@@ -432,24 +457,47 @@ export default function Story() {
     setClarifyLoading(true);
     setClarifyQs([]);
 
-    // FLAG-34: the backgrounded history question (from-person only) rides in
-    // FRONT of the generic clarify. Default is ONE question (the history one);
-    // the generic clarify adds a second ONLY when it genuinely finds a
-    // verdict-forking ambiguity — it's already biased hard toward returning [].
-    const historyP = (historyQRef.current ?? Promise.resolve("")).catch(() => "");
-    const genericP = fetch("/api/clarify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        conversation: windowForApi(answers.conversation).text, // FLAG-43 (absorbs FLAG-41)
-        nickname: name,
-      }),
-    })
-      .then((r) => r.json())
-      .then((d) => (Array.isArray(d?.questions) ? (d.questions as string[]) : []))
-      .catch(() => [] as string[]);
+    (async () => {
+      // FLAG-46 DETECT-FIRST: before deciding the question, check whether this is
+      // a re-send of the same conversation (continuation). Detection GATES the
+      // FLAG-34 question — on a continuation the question is suppressed and the
+      // what-changed delta carries the "since last time" thread instead, so the
+      // two never both reference the prior behaviour. Runs here, before any
+      // question is built, so it can't fire after the question already showed.
+      continuationRef.current = false;
+      if (fromPerson && personId) {
+        try {
+          const prior = await getRecentConversations(personId, 1);
+          if (prior[0]) {
+            const c = detectContinuation(prior[0].text, answers.conversation);
+            continuationRef.current = c.isContinuation;
+          }
+        } catch {
+          /* detection failure → normal read + normal question (safe fallthrough) */
+        }
+      }
+      if (cancelled) return;
 
-    Promise.all([historyP, genericP]).then(([hq, generic]) => {
+      // FLAG-34: the backgrounded history question (from-person only) rides in
+      // FRONT of the generic clarify — UNLESS this is a continuation, where it's
+      // suppressed in favour of the delta. Generic clarify adds a 2nd question
+      // only when it genuinely finds a verdict-forking ambiguity.
+      const historyP = continuationRef.current
+        ? Promise.resolve("")
+        : (historyQRef.current ?? Promise.resolve("")).catch(() => "");
+      const genericP = fetch("/api/clarify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversation: windowForApi(answers.conversation).text, // FLAG-43 (absorbs FLAG-41)
+          nickname: name,
+        }),
+      })
+        .then((r) => r.json())
+        .then((d) => (Array.isArray(d?.questions) ? (d.questions as string[]) : []))
+        .catch(() => [] as string[]);
+
+      const [hq, generic] = await Promise.all([historyP, genericP]);
       if (cancelled) return;
       const qs = [...(hq ? [hq] : []), ...generic].slice(0, 2);
       setClarifyLoading(false);
@@ -459,11 +507,11 @@ export default function Story() {
         setClarifyQs(qs);
         setClarifyAns(qs.map(() => ""));
       }
-    });
+    })();
     return () => {
       cancelled = true;
     };
-  }, [screen, answers.conversation, name, go, extractStatus, reviewMessages]);
+  }, [screen, answers.conversation, name, go, extractStatus, reviewMessages, fromPerson, personId]);
 
   // Entry boot (FLAG-38): decide the first screen ONCE, then render — no
   // first-time→returning flash. Three lanes kept separate:
@@ -815,6 +863,7 @@ export default function Story() {
               error={error}
               emailed={emailed}
               trimmed={readTrimmed}
+              delta={delta}
               conversation={answers.conversation}
               canFix={regenCount < 2}
               onFix={(text) => {
@@ -2384,6 +2433,7 @@ function ReadScreen({
   error,
   emailed,
   trimmed,
+  delta,
   conversation,
   canFix,
   onFix,
@@ -2395,6 +2445,7 @@ function ReadScreen({
   error: string;
   emailed: boolean;
   trimmed: boolean;
+  delta: string | null;
   conversation: string;
   canFix: boolean;
   onFix: (text: string) => void;
@@ -2476,7 +2527,7 @@ function ReadScreen({
       {/* FLAG-48: the read is delivered as a friend talking it through. Pure
           presentation — the analysis/conclusions are unchanged (Option A maps the
           existing Read fields to typed/pop/reveal turns). */}
-      <FriendRead read={read} emailed={emailed} trimmed={trimmed} onReply={() => setReplyOpen(true)} />
+      <FriendRead read={read} emailed={emailed} trimmed={trimmed} delta={delta} onReply={() => setReplyOpen(true)} />
 
       {/* "Help me reply" reveals the existing reply-assist (§2.6). */}
       {replyOpen && conversation.trim() && (
@@ -2551,14 +2602,16 @@ function FriendRead({
   read,
   emailed,
   trimmed,
+  delta,
   onReply,
 }: {
   read: Read;
   emailed: boolean;
   trimmed: boolean;
+  delta: string | null;
   onReply: () => void;
 }) {
-  const script = useMemo(() => toScript(read, { trimmed }), [read, trimmed]);
+  const script = useMemo(() => toScript(read, { trimmed, delta }), [read, trimmed, delta]);
   const [phase, setPhase] = useState<"thinking" | "flow">("thinking");
   const [shown, setShown] = useState(0);
   const [typing, setTyping] = useState<{ i: number; text: string } | null>(null);
