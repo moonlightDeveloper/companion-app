@@ -20,7 +20,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { Intake, Read, ReplyDraft, TranscriptMessage } from "@/types";
+import type { Intake, Read, ReplyDraft, TranscriptMessage, DeltaChange } from "@/types";
 import { saveConversation, evictExpired, getConversation, getRecentConversations } from "@/lib/localConversations";
 import { detectContinuation } from "@/lib/continuation";
 import { MAX_IMAGES } from "@/lib/cap";
@@ -192,7 +192,7 @@ export default function Story() {
   // FLAG-46: set when this read is a detected continuation of a prior one — drives
   // suppressing the FLAG-34 question and fetching the what-changed delta.
   const continuationRef = useRef(false);
-  const [delta, setDelta] = useState<string | null>(null);
+  const [delta, setDelta] = useState<DeltaChange[] | null>(null);
   // FLAG-36: mirror of fromPerson, readable inside the []-dep startBgRead.
   const fromPersonRef = useRef(false);
   useEffect(() => {
@@ -378,7 +378,7 @@ export default function Story() {
       // time" delta BEFORE the save below (so /api/delta reads the PRIOR report as
       // newest, not this one) and before reveal (so it's in the initial script).
       // Never blocks: any failure → no delta, just a normal read.
-      let deltaText: string | null = null;
+      let deltaChanges: DeltaChange[] = [];
       if (continuationRef.current && personId) {
         try {
           const d = await fetch("/api/delta", {
@@ -386,12 +386,13 @@ export default function Story() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ read, personId, nickname: answers.name }),
           }).then((r) => r.json());
-          deltaText = typeof d?.delta === "string" ? d.delta : null;
+          deltaChanges = Array.isArray(d?.changes) ? (d.changes as DeltaChange[]) : [];
         } catch {
           /* no delta → normal read */
         }
       }
-      setDelta(deltaText);
+      // Only a REAL set of concrete changes; empty → no before/after shown.
+      setDelta(deltaChanges.length > 0 ? deltaChanges : null);
 
       setRead(read);
       // FLAG-43: was the read generated from a windowed (capped) conversation?
@@ -2428,7 +2429,7 @@ function ReadScreen({
   read: Read | null;
   error: string;
   trimmed: boolean;
-  delta: string | null;
+  delta: DeltaChange[] | null;
   conversation: string;
   canFix: boolean;
   onFix: (text: string) => void;
@@ -2595,7 +2596,7 @@ function FriendRead({
 }: {
   read: Read;
   trimmed: boolean;
-  delta: string | null;
+  delta: DeltaChange[] | null;
   canReply: boolean;
   onReply: () => void;
 }) {
@@ -2821,6 +2822,31 @@ function FriendTurn({ item }: { item: FriendItem }) {
           <div className={styles.friendTiny}>{item.card.kind}</div>
           <h3 className={styles.friendCardTitle}>{item.card.title}</h3>
           <p>{item.card.body}</p>
+        </div>
+      </div>
+    );
+  }
+  if (item.t === "delta") {
+    // FLAG-46: concrete before → now contrast, paired so the change is obvious at
+    // a glance. Each side is a specific observed behaviour; the user draws the
+    // conclusion. (Only shown when there's a real change — never a vague "shifted".)
+    return (
+      <div className={styles.friendTurn}>
+        <div className={styles.deltaCard}>
+          <div className={styles.friendTiny}>Since last time</div>
+          {item.changes.map((c, i) => (
+            <div key={i} className={styles.deltaRow}>
+              <div className={styles.deltaCell}>
+                <span className={styles.deltaLabel}>Before</span>
+                <span>{c.before}</span>
+              </div>
+              <div className={styles.deltaArrow} aria-hidden="true">↓</div>
+              <div className={`${styles.deltaCell} ${styles.deltaCellNow}`}>
+                <span className={styles.deltaLabel}>Now</span>
+                <span>{c.now}</span>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     );
