@@ -2501,7 +2501,13 @@ function ReadScreen({
       {/* FLAG-48: the read is delivered as a friend talking it through. Pure
           presentation — the analysis/conclusions are unchanged (Option A maps the
           existing Read fields to typed/pop/reveal turns). */}
-      <FriendRead read={read} trimmed={trimmed} delta={delta} onReply={() => setReplyOpen(true)} />
+      <FriendRead
+        read={read}
+        trimmed={trimmed}
+        delta={delta}
+        canReply={!!conversation.trim()}
+        onReply={() => setReplyOpen(true)}
+      />
 
       {/* "Help me reply" reveals the existing reply-assist (§2.6), scrolled into
           view (it mounts below the sticky action bar). */}
@@ -2583,11 +2589,13 @@ function FriendRead({
   read,
   trimmed,
   delta,
+  canReply,
   onReply,
 }: {
   read: Read;
   trimmed: boolean;
   delta: string | null;
+  canReply: boolean;
   onReply: () => void;
 }) {
   const script = useMemo(() => toScript(read, { trimmed, delta }), [read, trimmed, delta]);
@@ -2741,9 +2749,13 @@ function FriendRead({
           padding handles the iPhone home bar. */}
       {finished && (
         <div className={styles.friendActions}>
-          <button className={`${styles.friendBtn} ${styles.friendBtnPrimary}`} onClick={onReply}>
-            ✍️ Help me reply
-          </button>
+          {/* Only show "Help me reply" when the conversation is actually in hand —
+              never a visible-but-dead button. */}
+          {canReply && (
+            <button className={`${styles.friendBtn} ${styles.friendBtnPrimary}`} onClick={onReply}>
+              ✍️ Help me reply
+            </button>
+          )}
           <Link href="/" className={`${styles.friendBtn} ${styles.friendBtnDark}`}>
             Read another conversation
           </Link>
