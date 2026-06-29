@@ -2643,14 +2643,13 @@ function FriendRead({
   const [finished, setFinished] = useState(false);
 
   const cancelled = useRef(false);
-  const follow = useRef(true);
   const timers = useRef<number[]>([]);
-  const endRef = useRef<HTMLDivElement>(null);
 
-  const scrollFollow = useCallback(() => {
-    if (follow.current) endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, []);
-
+  // The reveal still plays on its own pace (typing, sequencing) — but the app
+  // NEVER scrolls the page. The user controls scroll position; content may reveal
+  // below the fold and they scroll to it. (Auto-scroll + its scroll-up-halt
+  // machinery were the buggy "not scrolling in time" part — removed; the reveal,
+  // which was never the problem, stays.)
   const showAll = useCallback(() => {
     cancelled.current = true;
     timers.current.forEach((t) => clearTimeout(t));
@@ -2659,38 +2658,6 @@ function FriendRead({
     setShown(script.length);
     setFinished(true);
   }, [script.length]);
-
-  // Corrected manual-scroll (FLAG-48, overrides the file's unconditional
-  // auto-scroll): auto-follow until the user scrolls UP via wheel / keyboard /
-  // touch — then OFF for good. No jump, no near-bottom resume.
-  useEffect(() => {
-    const stop = () => {
-      follow.current = false;
-    };
-    const onWheel = (e: WheelEvent) => {
-      if (e.deltaY < 0) stop();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowUp" || e.key === "PageUp" || e.key === "Home") stop();
-    };
-    let ty = 0;
-    const onTS = (e: TouchEvent) => {
-      ty = e.touches[0]?.clientY ?? 0;
-    };
-    const onTM = (e: TouchEvent) => {
-      if ((e.touches[0]?.clientY ?? 0) > ty + 4) stop();
-    };
-    window.addEventListener("wheel", onWheel, { passive: true });
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("touchstart", onTS, { passive: true });
-    window.addEventListener("touchmove", onTM, { passive: true });
-    return () => {
-      window.removeEventListener("wheel", onWheel);
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("touchstart", onTS);
-      window.removeEventListener("touchmove", onTM);
-    };
-  }, []);
 
   // The sequencer — same dwell/typing values as the reference file.
   useEffect(() => {
@@ -2716,12 +2683,10 @@ function FriendRead({
           if (cancelled.current) return;
           let acc = "";
           setTyping({ i, text: "" });
-          scrollFollow();
           for (const ch of item.text) {
             if (cancelled.current) return;
             acc += ch;
             setTyping({ i, text: acc });
-            scrollFollow();
             await wait(ch === " " ? FRIEND.SPACE : FRIEND_PUNCT.test(ch) ? FRIEND.PUNCT : FRIEND.TYPE_PER);
           }
           setTyping(null);
@@ -2729,7 +2694,6 @@ function FriendRead({
           await wait(FRIEND.TYPE_POST);
         } else {
           setShown(i + 1);
-          scrollFollow();
           await wait(item.t === "pop" ? FRIEND.POP : FRIEND.REVEAL);
         }
       }
@@ -2783,7 +2747,6 @@ function FriendRead({
               </Link>
             </p>
           )}
-          <div ref={endRef} />
         </div>
       )}
       {/* FLAG-48 sticky actions: reachable while scrolling, shown once the unfold
