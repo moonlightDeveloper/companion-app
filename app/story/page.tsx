@@ -25,6 +25,7 @@ import { saveConversation, evictExpired, getConversation } from "@/lib/localConv
 import { MAX_IMAGES } from "@/lib/cap";
 import { parseWhatsAppExport, type ParsedChat } from "@/lib/whatsapp";
 import { toScript, type FriendItem } from "@/lib/friendScript";
+import { windowForApi } from "@/lib/window";
 import styles from "./story.module.css";
 
 type Screen =
@@ -154,6 +155,7 @@ export default function Story() {
   const [answers, setAnswers] = useState<Intake>(emptyIntake);
   const [status, setStatus] = useState<Status>("idle");
   const [read, setRead] = useState<Read | null>(null);
+  const [readTrimmed, setReadTrimmed] = useState(false); // FLAG-43 transparency
   const [error, setError] = useState("");
   const [email, setEmail] = useState("");
   const [consent, setConsent] = useState(false);
@@ -228,7 +230,8 @@ export default function Story() {
         const res = await fetch("/api/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...intake, conversation, preview: true }),
+          // FLAG-43: cap what's SENT (full stays in answers/IndexedDB).
+          body: JSON.stringify({ ...intake, conversation: windowForApi(conversation).text, preview: true }),
           signal: ctrl.signal,
         });
         const data = await res.json();
@@ -320,7 +323,12 @@ export default function Story() {
         const res = await fetch("/api/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...answers, preview: true, clarifications }),
+          body: JSON.stringify({
+            ...answers,
+            conversation: windowForApi(answers.conversation).text, // FLAG-43
+            preview: true,
+            clarifications,
+          }),
           signal: ctrl.signal,
         });
         const data = await res.json();
@@ -358,6 +366,9 @@ export default function Story() {
       }
       bgReadRef.current = null;
       setRead(read);
+      // FLAG-43: was the read generated from a windowed (capped) conversation?
+      // Drives the transparency line; the stored conversation is still full.
+      setReadTrimmed(windowForApi(answers.conversation).trimmed);
       setStatus("done");
 
       // Persist (non-blocking) — only the final read is stored; conversation is
@@ -429,7 +440,10 @@ export default function Story() {
     const genericP = fetch("/api/clarify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ conversation: answers.conversation, nickname: name }),
+      body: JSON.stringify({
+        conversation: windowForApi(answers.conversation).text, // FLAG-43 (absorbs FLAG-41)
+        nickname: name,
+      }),
     })
       .then((r) => r.json())
       .then((d) => (Array.isArray(d?.questions) ? (d.questions as string[]) : []))
@@ -800,6 +814,7 @@ export default function Story() {
               read={read}
               error={error}
               emailed={emailed}
+              trimmed={readTrimmed}
               conversation={answers.conversation}
               canFix={regenCount < 2}
               onFix={(text) => {
@@ -2368,6 +2383,7 @@ function ReadScreen({
   read,
   error,
   emailed,
+  trimmed,
   conversation,
   canFix,
   onFix,
@@ -2378,6 +2394,7 @@ function ReadScreen({
   read: Read | null;
   error: string;
   emailed: boolean;
+  trimmed: boolean;
   conversation: string;
   canFix: boolean;
   onFix: (text: string) => void;
@@ -2459,7 +2476,7 @@ function ReadScreen({
       {/* FLAG-48: the read is delivered as a friend talking it through. Pure
           presentation — the analysis/conclusions are unchanged (Option A maps the
           existing Read fields to typed/pop/reveal turns). */}
-      <FriendRead read={read} emailed={emailed} onReply={() => setReplyOpen(true)} />
+      <FriendRead read={read} emailed={emailed} trimmed={trimmed} onReply={() => setReplyOpen(true)} />
 
       {/* "Help me reply" reveals the existing reply-assist (§2.6). */}
       {replyOpen && conversation.trim() && (
@@ -2533,13 +2550,15 @@ const friendToneColor = (tone: string) =>
 function FriendRead({
   read,
   emailed,
+  trimmed,
   onReply,
 }: {
   read: Read;
   emailed: boolean;
+  trimmed: boolean;
   onReply: () => void;
 }) {
-  const script = useMemo(() => toScript(read), [read]);
+  const script = useMemo(() => toScript(read, { trimmed }), [read, trimmed]);
   const [phase, setPhase] = useState<"thinking" | "flow">("thinking");
   const [shown, setShown] = useState(0);
   const [typing, setTyping] = useState<{ i: number; text: string } | null>(null);
@@ -2841,7 +2860,7 @@ function ReplyHelper({ name, conversation }: { name: string; conversation: strin
       const res = await fetch("/api/reply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversation, intent, nickname: name }),
+        body: JSON.stringify({ conversation: windowForApi(conversation).text, intent, nickname: name }), // FLAG-43
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Couldn't draft a reply.");
