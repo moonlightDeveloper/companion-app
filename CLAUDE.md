@@ -36,7 +36,7 @@ per-person history of those reads.
 `index.html` and `app.html` at the root are the design source of truth —
 preserve them; port from them, don't delete them.
 
-**What exists today (shipped, FLAG-1 → FLAG-30):**
+**What exists today (shipped, FLAG-1 → FLAG-48; FLAG-46 built-but-validation-pending):**
 
 - The guided `/story` flow: one-question-at-a-time intake → paste or upload
   screenshots (Claude vision → ordered transcript) → a live behaviour read.
@@ -97,6 +97,93 @@ preserve them; port from them, don't delete them.
   desktop drag-drop and the picker share one validation path. Over-limit keeps
   ALL images (nothing silently dropped), dims the extras (index ≥ MAX_IMAGES),
   shows a red instruction banner, and disables Continue until trimmed.
+- WhatsApp import (FLAG-32/FLAG-37): "Enter conversation" → WhatsApp or
+  plain text. A `.txt` **or** `.zip` export is parsed **entirely on-device**
+  (`lib/whatsapp.ts`; zip via dynamic-imported JSZip, the chat `.txt` pulled out,
+  media never decompressed), the user picks which sender is them → sender mapped to
+  "You" / the nickname **before anything leaves the device**, media/voice render as
+  `[media]`/`[voice message]`. Feeds the same pipeline as paste; no server route.
+- Read auto-retry (FLAG-33): the foreground read does **one silent retry** before
+  the error screen — a transient first-attempt failure (tail-latency abort / API
+  hiccup) self-heals instead of showing "couldn't finish". The error screen now
+  means a genuine back-to-back double failure.
+- History-informed intake question (FLAG-34): a returning user on a saved
+  person gets **one** pre-read question grounded in their **single most-recent prior
+  read** ("last time the plans kept slipping — still, or did this one land?"). It
+  **asks** about one read they already saw; it never synthesizes across reads
+  (that's the paid pattern insight). Free for all returning users; rides the clarify
+  slot; never blocks.
+- Read timeout (FLAG-35): the read client-abort is **40s** (was 25s) — headroom for
+  a transient API slow-window so a slow-but-completing read lands, not a false
+  abort; `maxDuration=60` on the analyze route. Reads land ~15s; 40s is headroom,
+  not the expected wait. (Sized to data, not fear — see "verdict-stable" below.)
+- Entry boot — three-tier, decide-then-render (FLAG-38, §2.8): the initial screen is
+  a neutral **boot splash**; `/api/me` + `/api/persons` run in parallel and the
+  entry screen is decided **once** when they resolve — no first-time→returning flash.
+  `/api/me` is the **sole** "returning?" signal (tier-1 session→pick, tier-2 soft
+  token→welcome, tier-3 neither→cover); **roster** is pick-vs-create *within* a
+  recognized session only; **personReports** feeds the FLAG-34 question only. Three
+  lanes, never conflated. 2.5s cap → degrade to first-time (safe), never stuck.
+- Prompt caching (FLAG-40) + cache tripwire (FLAG-42): the stable system prefixes
+  are marked `cache_control: ephemeral` via `cachedSystem()` (`lib/models.ts`).
+  analyze's ~1.3k-token system caches (~90% off that portion within the 5-min TTL);
+  the others sit under the ~1024-token cache minimum (marked anyway, inert until they
+  grow). analyze logs a one-line **cache HIT/MISS** tripwire — persistent MISS =
+  the byte-identical prefix broke (a prompt tweak / dynamic value crept in) and
+  caching is silently paying full price.
+- Read consistency (FLAG-44): analyze runs at **temperature 0.3** (was the API
+  default 1.0). The verdict was already stable at 1.0; 0.3 tightens the surface
+  wording so repeats *look* consistent. Stay at 0.3 — full determinism flattens the
+  §2.10 voice for no verdict gain.
+- Cited-evidence enrichment (FLAG-45): the read cites the four high-signal
+  behaviours — **follow-through, trajectory, initiation, responsiveness** — concretely
+  where present, woven into the existing bar captions + card bodies (NOT new
+  gauges/sections). Counts only when real (no manufactured "deflected 1×"); cites
+  only what's present (a thin chat scales down). Prompt-level; behaviour-not-intent,
+  no self-blame, FLAG-16 scrub intact.
+- Friend delivery (FLAG-48): the read is delivered as a friend talking it
+  through — a thinking beat, then **typed** key lines (verdict, reassurance, and a
+  mid emphasis on rich reads), **popped** connectors, and **revealed** evidence
+  asides / move / CTA. Pure presentation (Option A maps existing `Read` fields via
+  `lib/friendScript.ts`; analysis unchanged). "Show it all" skip, reduced-motion
+  instant render, **auto-follow scroll that turns off for good once you scroll up**
+  (no jump/resume), "Help me reply" → the existing reply-assist (§2.6). Styles scoped
+  to `.friendRoot` — the Newsreader/paper look never leaks into the app.
+- Email-code cross-device recovery (FLAG-47, §2.8): tier-3 (no soft token — new
+  device / cleared cookies) gets a **discoverable-but-secondary** "recover your
+  people" entry on the cover → email → **neutral "if that email's registered, we sent
+  a code"** → 6-digit code → verify → roster loads → pick-or-create. Reuses the
+  dormant OTP plumbing (`/api/auth/otp[/verify]` + `login_codes`). **No enumeration**:
+  identical response whether or not the email exists; a code is sent **only** to a
+  registered email (all failures swallowed to the neutral response). Email alone
+  unlocks nothing — the code is the second factor; roster loads only after verify.
+- API input cap (FLAG-43): outlier-long conversations are windowed to
+  **~15k tokens** (`windowForApi`, `lib/window.ts`) at the **send boundary** of every
+  conversation-sending path (analyze / clarify / reply — one shared helper). **Trim
+  SENT, never STORED**: the full conversation always stays in IndexedDB (storage is
+  free; trimming it would foreclose the paid pattern-over-time tier). Keeps the recent
+  end, drops oldest whole messages, never mid-message; a calm transparency note shows
+  **only** when trimming fires. **Token-only** cap (the message-count proxy was dropped
+  — real messages run ~12 tok/msg, see below). Absorbed FLAG-41 (clarify windowing).
+
+**Built but NOT validated (live, but not trusted until gate-1 on real data):**
+
+- What-changed delta + re-send detection (FLAG-46): a returning user who
+  re-sends the **same conversation continued** gets a calm behavioural **delta**
+  ("last time plans kept slipping; this time they named a day") instead of re-reading.
+  Detection (`lib/continuation.ts`, client-side) matches on normalized **message
+  content** (strips timestamps / sender labels / placeholders) via the **longest
+  contiguous ordered run** — ≥85% of the prior AND ≥8 messages — so it catches
+  **mixed-capture** continuations (screenshots ↔ export of the same chat) while a
+  long ordered run is what unrelated chats sharing small talk can't fake.
+  **Detect-first**: detection runs before the FLAG-34 question and **gates** it — on a
+  continuation the question is suppressed and the delta carries the "since last time"
+  thread (one coherent returning-user experience, never both). The delta compares the
+  two scrubbed reads (never the conversation); "largely the same" when nothing moved
+  (never manufactured). **STATUS: built, merged, live — but thresholds are PROVISIONAL
+  and gate-1 is unrun**: validate on a REAL mixed-capture positive AND an adversarial
+  negative (different chat, same person, shared greetings → must NOT match) before it's
+  trusted. Self-serve harness: `scripts/check-continuation.mts`.
 
 **Planned (designed, not yet built):**
 
@@ -134,17 +221,26 @@ or every route 404s (dev server chokes on a production `.next`).
 - `app/api/reply` → `lib/reply.ts` — 2–3 reply drafts (Claude)
 - `app/api/auth/{request,verify,signout}` → `lib/auth.ts` — magic-link + session
 - `app/api/auth/otp` + `app/api/auth/otp/verify` → `lib/auth.ts` + `lib/db.ts` — inline OTP sign-in
-- `app/api/me` → `lib/auth.ts` — session check (am I signed in, as whom)
+- `app/api/me` → `lib/auth.ts` — session check + soft-token presence (FLAG-38 boot)
+- `app/api/auth/recognize` → `lib/auth.ts` + `lib/db.ts` — tier-2 token+email recognition (FLAG-22)
 - `app/api/persons` → `lib/db.ts` — the signed-in user's roster
 - `app/api/persons/[id]/reports` + `app/api/persons/[id]/pattern` → `lib/db.ts` + `lib/pattern.ts` — per-person history (§2.5)
+- `app/api/history-question` → `lib/historyQuestion.ts` — FLAG-34 single-prior-read pre-read question
+- `app/api/delta` → `lib/delta.ts` — FLAG-46 what-changed delta (prior read vs new read)
 - `app/api/delete-data` → `lib/db.ts` — remove saved reads by email
 - `lib/db.ts` — Postgres (`users/persons/reports/reads/login_codes`); `lib/email.ts` —
   Resend (`sendReadEmail`, `sendMagicLink`, `sendLoginCode`); `lib/localConversations.ts` —
   IndexedDB; `lib/prompt.ts` — read prompt; `lib/pattern.ts` — pattern-insight synthesis
-- `lib/models.ts` — per-path model selection `modelFor(path)` (FLAG-24); `lib/cap.ts` —
-  the `MAX_IMAGES` upload cap, single source of truth shared by client + extract route (FLAG-28)
+- `lib/models.ts` — per-path model selection `modelFor(path)` + `cachedSystem()` prompt caching (FLAG-24/40);
+  `lib/cap.ts` — `MAX_IMAGES` upload cap, single source of truth (FLAG-28)
+- `lib/whatsapp.ts` — WhatsApp `.txt`/`.zip` export parse, on-device (FLAG-32/37);
+  `lib/window.ts` — `windowForApi` token cap on SENT conversation (FLAG-43)
+- `lib/continuation.ts` — content-normalized re-send detection (FLAG-46);
+  `lib/friendScript.ts` — `toScript` maps a `Read` → friend-delivery turns (FLAG-48)
+- `lib/mockLlm.ts` — `MOCK_LLM=1` canned responses, prod-guarded (FLAG-39)
 - `types.ts` — shared types (`Read`, `Intake`, `Transcript`, `ReplyDraft`, …)
-- `scripts/migrate-double-encoded.mjs` — one-time jsonb normalization (FLAG-15)
+- `scripts/migrate-double-encoded.mjs` — one-time jsonb normalization (FLAG-15);
+  `scripts/check-continuation.mts` — FLAG-46 gate-1 detection harness
 
 Model output is always run through a shape-guard so a missing/stray field
 can't crash the UI. Add new fields there, not just in the prompt.
@@ -155,9 +251,11 @@ can't crash the UI. Add new fields there, not just in the prompt.
 - **Per-path model selection (FLAG-24, `lib/models.ts`).** Each call site picks
   its model via `modelFor(path)` — never a raw env read. `MODEL` sets the STRONG
   default (`claude-sonnet-4-6`), `MODEL_FAST` the fast default, and per-path
-  `MODEL_<PATH>` (e.g. `MODEL_EXTRACT`) overrides any one path. Today read /
-  reply / pattern / clarify / extract all resolve to STRONG; extract is mapped to
-  STRONG because Haiku failed the accuracy gate (see the FLAG-24 note above).
+  `MODEL_<PATH>` (e.g. `MODEL_EXTRACT`) overrides any one path. Today all paths —
+  analyze / reply / pattern / clarify / extract / history / delta — resolve to
+  STRONG; extract is mapped to STRONG because Haiku failed the accuracy gate (see
+  the FLAG-24 note above). `cachedSystem()` marks each path's stable system prefix
+  for prompt caching (FLAG-40).
 - Choose for instruction-following + low sycophancy, not maximum "empathy": a
   model that's too warm/agreeable will reassure the user instead of giving the
   honest read, which is the exact failure this product exists to avoid. A
@@ -479,6 +577,39 @@ user whose only screenshot is imperfect.**
 - The image-upload limit has ONE source of truth: `MAX_IMAGES` in `lib/cap.ts`,
   imported by both the client and the extract route. Never hardcode a count
   (6/8/…) anywhere — that divergence was the "6 vs 8" bug (FLAG-28).
+- **Trim SENT, never STORED** (FLAG-43). The ~15k-token input cap (`windowForApi`,
+  `lib/window.ts`) applies ONLY to what's sent to analyze/clarify/reply. The full
+  conversation always stays complete in IndexedDB — trimming the stored copy saves
+  $0 (storage is free) and would foreclose the paid pattern-over-time tier + reply +
+  FLAG-46 continuation detection, which need the full text. Cap API input only.
+- **Two-factor identity** (FLAG-22/FLAG-47). Recognition needs the soft/session
+  token AND a matching email — token alone never unlocks the roster, email alone
+  never does either. The email-recovery code (tier-3) is the second factor when the
+  token is gone. The recovery endpoint must stay **enumeration-neutral**: identical
+  response whether or not the email exists; a code is sent only to a registered
+  email; all failures swallow into the neutral response.
+
+## Durable findings (don't re-litigate)
+
+- **The read is VERDICT-STABLE.** Proven across 8 identical-input runs incl. a
+  deliberately 50/50 chat — the conclusion never flips (no green↔red). "Same chat,
+  different report" was (1) cosmetic temperature-1.0 wording jitter — **fixed by
+  temperature 0.3** (FLAG-44; stay there, don't go to 0) — plus (2) the
+  background-vs-fresh read correctly updating on new info (e.g. a clarification), which
+  is right, not a bug. Don't re-investigate the read as if the verdict wobbles.
+- **Real WhatsApp messages run ~12 tokens/message**, not the ~25–30 synthetic
+  estimate. Caps and budgets are **token-based, never message-count** (the message
+  proxy disagreed with real cost and would false-trigger — FLAG-43 gate-1 finding).
+- **Cost levers, in order:** test discipline (no real Sonnet calls for plumbing/
+  latency — `MOCK_LLM=1`, FLAG-39) and prompt caching (FLAG-40). **Haiku-for-
+  mechanical-paths was audited and dropped** — ~3× not ~10× cheaper, the movable
+  paths are sub-cent + low-frequency, and the one candidate (history question) carries
+  voice-drift risk. Don't re-propose it. Extraction stays STRONG (Haiku failed the
+  accuracy gate).
+- **Verify model-output changes on REAL data, never synthetic** — real dense
+  screenshots (extraction), real exports (WhatsApp parse / input cap), real re-export
+  pairs + a negative (FLAG-46 detection). Synthetic passes are fake greens; this
+  discipline has caught every prod bug. `MOCK_LLM=1` is for plumbing/flow only.
 
 ## Git / PR / Jira workflow
 
