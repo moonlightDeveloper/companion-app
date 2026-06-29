@@ -892,11 +892,19 @@
   line-height: 1.45;
   color: var(--f-ink);
 }
-.friendCta {
-  opacity: 0;
-  transform: translateY(10px);
-  animation: friendRise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
-  margin-top: 8px;
+/* FLAG-48 sticky actions: sticky-bottom as the last in-flow child of the read —
+   stays reachable while scrolling, on both the desktop card (scrolls in .main) and
+   mobile page scroll. Solid fade so content reads behind its top edge; safe-area
+   padding clears the iPhone home bar. Self-clearing (last child) → no content hidden. */
+.friendActions {
+  position: sticky;
+  bottom: 0;
+  z-index: 6;
+  margin-top: 24px;
+  padding-top: 14px;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(to top, var(--f-paper) 80%, rgba(245, 241, 235, 0));
+  animation: friendRise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 .friendBtn {
   width: 100%;
@@ -970,10 +978,32 @@
   .friendPop,
   .friendAside,
   .friendMove,
-  .friendCta,
+  .friendActions,
   .friendFill {
     animation-duration: 0.01ms !important;
     opacity: 1 !important;
     transform: none !important;
+  }
+}
+
+/* FLAG-48 fix: on mobile, remove the inner scroll container so the PAGE scrolls
+   (one scroll, no nested scroll trap). The phone-frame card grows with content and
+   the body scrolls; desktop keeps the fixed card. */
+@media (max-width: 480px) {
+  .stage {
+    padding: 0;
+    align-items: start;
+  }
+  .phone {
+    width: 100%;
+    height: auto;
+    min-height: 100vh;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    overflow: visible;
+  }
+  .main {
+    overflow: visible;
   }
 }

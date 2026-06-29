@@ -2535,8 +2535,10 @@ function ReadScreen({
       )}
 
       {/* Backstop: catch a confident misread (wrong-side attribution) or enrich
-          voice-message gaps. */}
-      {canFix && conversation.trim() && (
+          voice-message gaps. ENTRY POINT HIDDEN (SHOW_FIX_BACKSTOP=false) — the
+          edit-and-reread mechanism (FixBackstop + onFix → in-place regen) stays
+          intact and dormant; flip the flag to re-expose it without a rebuild. */}
+      {SHOW_FIX_BACKSTOP && canFix && conversation.trim() && (
         <FixBackstop
           conversation={conversation}
           voice={conversation.includes("[voice message]")}
@@ -2586,6 +2588,10 @@ function ReadBody({ read }: { read: Read }) {
     </>
   );
 }
+
+// Manual edit-and-reread entry point is hidden for now (mechanism kept dormant —
+// see FixBackstop + onFix). Flip to true to re-expose it; no rebuild needed.
+const SHOW_FIX_BACKSTOP = false;
 
 /* ---------- FLAG-48: "friend talking it through" report delivery ---------- */
 // Exact timings ported from the approved report-friend-final.html.
@@ -2733,7 +2739,7 @@ function FriendRead({
       ) : (
         <div className={styles.friendFlow}>
           {script.slice(0, shown).map((item, i) => (
-            <FriendTurn key={i} item={item} emailed={emailed} onReply={onReply} />
+            <FriendTurn key={i} item={item} />
           ))}
           {typingItem && typingItem.t === "type" && (
             <div className={styles.friendTurn}>
@@ -2747,6 +2753,27 @@ function FriendRead({
           <div ref={endRef} />
         </div>
       )}
+      {/* FLAG-48 sticky actions: reachable while scrolling, shown once the unfold
+          finishes (so it doesn't compete with the typing). Sticky-bottom as the
+          last in-flow child — self-clearing, no content hidden behind it; safe-area
+          padding handles the iPhone home bar. */}
+      {finished && (
+        <div className={styles.friendActions}>
+          <button className={`${styles.friendBtn} ${styles.friendBtnPrimary}`} onClick={onReply}>
+            ✍️ Help me reply
+          </button>
+          <Link href="/" className={`${styles.friendBtn} ${styles.friendBtnDark}`}>
+            Read another conversation
+          </Link>
+          <Link href="/signin" className={`${styles.friendBtn} ${styles.friendBtnGhost}`}>
+            See how this changes over time
+          </Link>
+          <p className={styles.friendFine}>
+            {emailed ? "Saved — a copy's in your inbox. " : "Saved here for you. "}
+            Only you see it.
+          </p>
+        </div>
+      )}
       {!finished && (
         <button className={styles.friendSkip} onClick={showAll}>
           Show it all
@@ -2756,15 +2783,7 @@ function FriendRead({
   );
 }
 
-function FriendTurn({
-  item,
-  emailed,
-  onReply,
-}: {
-  item: FriendItem;
-  emailed: boolean;
-  onReply: () => void;
-}) {
+function FriendTurn({ item }: { item: FriendItem }) {
   if (item.t === "type") {
     return (
       <div className={styles.friendTurn}>
@@ -2815,33 +2834,12 @@ function FriendTurn({
       </div>
     );
   }
-  if (item.t === "move") {
-    return (
-      <div className={styles.friendTurn}>
-        <div className={styles.friendMove}>
-          <div className={styles.friendTiny}>If you want a move</div>
-          <p>{item.text}</p>
-        </div>
-      </div>
-    );
-  }
-  // cta
+  // move
   return (
     <div className={styles.friendTurn}>
-      <div className={styles.friendCta}>
-        <button className={`${styles.friendBtn} ${styles.friendBtnPrimary}`} onClick={onReply}>
-          ✍️ Help me reply
-        </button>
-        <Link href="/" className={`${styles.friendBtn} ${styles.friendBtnDark}`}>
-          Read another conversation
-        </Link>
-        <Link href="/signin" className={`${styles.friendBtn} ${styles.friendBtnGhost}`}>
-          See how this changes over time
-        </Link>
-        <p className={styles.friendFine}>
-          {emailed ? "Saved — a copy's in your inbox. " : "Saved here for you. "}
-          Only you see it.
-        </p>
+      <div className={styles.friendMove}>
+        <div className={styles.friendTiny}>If you want a move</div>
+        <p>{item.text}</p>
       </div>
     </div>
   );
