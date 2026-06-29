@@ -31,11 +31,17 @@ function firstSentence(s: string): [string, string] {
   return m ? [m[1].trim(), m[2].trim()] : [s.trim(), ""];
 }
 
-export function toScript(read: Read, opts?: { trimmed?: boolean }): FriendItem[] {
+export function toScript(read: Read, opts?: { trimmed?: boolean; delta?: string | null }): FriendItem[] {
   const items: FriendItem[] = [];
 
   items.push({ t: "type", cls: "big", text: read.headline });
   items.push({ t: "pop", cls: "small", text: DISCLAIMER });
+  // FLAG-46: on a re-sent (continued) conversation, the "what changed since last
+  // time" delta is the FIRST thing after the verdict — typed, so it carries
+  // emphasis. It supplements the read; the rest of the read still follows.
+  if (opts?.delta) {
+    items.push({ t: "type", cls: "accent", text: opts.delta });
+  }
   // FLAG-43: only when the conversation was windowed for the API call. The full
   // conversation is still stored on-device; this just tells the user the read
   // focused on the recent stretch.
