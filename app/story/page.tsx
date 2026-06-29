@@ -49,7 +49,8 @@ type Screen =
   | "feeling"
   | "email"
   | "clarify"
-  | "read";
+  | "read"
+  | "reply";
 
 const FLOW: Screen[] = [
   "cover",
@@ -857,7 +858,9 @@ export default function Story() {
               />
             ) : null)}
 
-          {screen === "read" && (
+          {/* ReadScreen stays mounted during the reply screen so the read is
+              preserved underneath — same scroll, no re-unfold (FLAG-48 reply). */}
+          {(screen === "read" || screen === "reply") && (
             <ReadScreen
               name={name}
               status={status}
@@ -874,6 +877,17 @@ export default function Story() {
                 setStatus("idle"); // re-trigger produceRead → updates the same report
               }}
               onRetry={produceRead}
+              onReply={() => go("reply")}
+            />
+          )}
+
+          {/* Reply takeover: a real screen (screen state + back), rendered over the
+              preserved read. Back returns to the read exactly as left. */}
+          {screen === "reply" && (
+            <ReplyScreen
+              name={name}
+              conversation={answers.conversation}
+              onBack={back}
             />
           )}
           </>
@@ -2407,6 +2421,7 @@ function ReadScreen({
   canFix,
   onFix,
   onRetry,
+  onReply,
 }: {
   name: string;
   status: Status;
@@ -2418,16 +2433,10 @@ function ReadScreen({
   canFix: boolean;
   onFix: (text: string) => void;
   onRetry: () => void;
+  onReply: () => void;
 }) {
-  // FLAG-48: "Help me reply" in the friend delivery reveals the existing
-  // ReplyHelper (§2.6) — no new reply logic.
-  const [replyOpen, setReplyOpen] = useState(false);
-  const replyRef = useRef<HTMLDivElement>(null);
-  // The reply UI mounts below the report + the sticky action bar; bring it into
-  // view when opened so the tap visibly does something (not silently off-screen).
-  useEffect(() => {
-    if (replyOpen) replyRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [replyOpen]);
+  // FLAG-48: "Help me reply" navigates to the dedicated reply screen (onReply →
+  // go("reply")); the read stays mounted underneath and is restored on back.
   if (status === "loading" || status === "idle") {
     return (
       <section className={styles.screen}>
@@ -2506,16 +2515,8 @@ function ReadScreen({
         trimmed={trimmed}
         delta={delta}
         canReply={!!conversation.trim()}
-        onReply={() => setReplyOpen(true)}
+        onReply={onReply}
       />
-
-      {/* "Help me reply" reveals the existing reply-assist (§2.6), scrolled into
-          view (it mounts below the sticky action bar). */}
-      {replyOpen && conversation.trim() && (
-        <div ref={replyRef} style={{ scrollMarginTop: 16 }}>
-          <ReplyHelper name={name} conversation={conversation} />
-        </div>
-      )}
 
       {/* Backstop: catch a confident misread (wrong-side attribution) or enrich
           voice-message gaps. ENTRY POINT HIDDEN (SHOW_FIX_BACKSTOP=false) — the
@@ -2886,6 +2887,47 @@ function FixBackstop({
   );
 }
 
+/**
+ * FLAG-48: the reply screen — a full takeover rendered over the preserved read.
+ * Driven by the `reply` screen state (go("reply") / back()), so the read stays
+ * mounted underneath and is restored exactly on back. Hosts the real ReplyHelper.
+ */
+function ReplyScreen({
+  name,
+  conversation,
+  onBack,
+}: {
+  name: string;
+  conversation: string;
+  onBack: () => void;
+}) {
+  return (
+    <div className={styles.replyScreen}>
+      <div className={styles.replyBar}>
+        <button className={styles.back} aria-label="Back to your read" onClick={onBack}>
+          &#8249;
+        </button>
+        <div className={styles.replyBarTitle}>Help me reply</div>
+      </div>
+      <div className={styles.replyBody}>
+        <p className={styles.subtext} style={{ marginTop: 0, marginBottom: 4 }}>
+          Drafting a reply to {name}. Tell me what you want to land.
+        </p>
+        <ReplyHelper name={name} conversation={conversation} />
+        {/* Second back at the END, after the drafts, so a scrolled-down user can
+            leave without scrolling up. Same behaviour as the top back. */}
+        <button
+          className={styles.secondary}
+          style={{ marginTop: 20 }}
+          onClick={onBack}
+        >
+          &#8249; Back to your read
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ReplyHelper({ name, conversation }: { name: string; conversation: string }) {
   const [intent, setIntent] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
@@ -2938,9 +2980,15 @@ function ReplyHelper({ name, conversation }: { name: string; conversation: strin
       {status === "error" && (
         <p className={styles.subtext} style={{ color: "var(--red)" }}>{error}</p>
       )}
-      {drafts.map((d, i) => (
-        <DraftCard key={i} draft={d} />
-      ))}
+      {drafts.length > 0 && (
+        // Equal-height cards: grid-auto-rows:1fr sizes every card to the TALLEST,
+        // so shorter suggestions get the same height (extra space), not ragged.
+        <div className={styles.draftGrid}>
+          {drafts.map((d, i) => (
+            <DraftCard key={i} draft={d} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -2949,7 +2997,7 @@ function DraftCard({ draft }: { draft: ReplyDraft }) {
   const [text, setText] = useState(draft.text);
   const [copied, setCopied] = useState(false);
   return (
-    <div style={{ marginTop: 12 }}>
+    <div className={styles.draftCard}>
       <div className={styles.barhead}>
         <b>{draft.tone}</b>
         <button
@@ -2967,9 +3015,11 @@ function DraftCard({ draft }: { draft: ReplyDraft }) {
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
+      {/* flex:1 → the textarea fills the equal-height card, so a short draft just
+          gets a taller field rather than a short card. */}
       <textarea
         className={styles.textarea}
-        style={{ minHeight: 72 }}
+        style={{ flex: 1, minHeight: 72 }}
         value={text}
         onChange={(e) => setText(e.target.value)}
       />

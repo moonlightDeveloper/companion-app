@@ -1004,3 +1004,50 @@
     overflow: visible;
   }
 }
+
+/* FLAG-48 reply screen: a full-viewport takeover rendered OVER the preserved read
+   (the read stays mounted underneath; back restores it untouched). Driven by the
+   `reply` screen state, not a modal. */
+.replyScreen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--paper);
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.replyBar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: rgba(255, 250, 247, 0.94);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+.replyBarTitle {
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--ink);
+}
+.replyBody {
+  width: min(430px, 100%);
+  margin: 0 auto;
+  padding: 18px 20px calc(28px + env(safe-area-inset-bottom, 0px));
+}
+
+/* FLAG-48 reply drafts: equal-height cards. grid-auto-rows:1fr makes every card
+   the height of the tallest; each card is a flex column so its textarea fills the
+   extra space (short drafts get a taller field, not a short ragged card). */
+.draftGrid {
+  display: grid;
+  grid-auto-rows: 1fr;
+  gap: 12px;
+  margin-top: 14px;
+}
+.draftCard {
+  display: flex;
+  flex-direction: column;
+}
