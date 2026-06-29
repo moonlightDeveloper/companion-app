@@ -23,8 +23,14 @@ const MIN_RUN = 8;
 const RUN_RATIO = 0.85;
 
 export interface ContinuationResult {
+  /** Genuine continuation: the prior is (most of) a prefix of the new upload AND
+   *  there are new messages beyond it. This is what fires the before/after. */
   isContinuation: boolean;
-  /** True when new is the same messages as prior with no new tail. */
+  /** Nothing new to diff: the new upload is identical to, OR a subset/earlier
+   *  version of, the stored prior — it contains nothing beyond what's stored.
+   *  Routes to the calm "nothing new" gate (no before/after, no fresh-read question). */
+  nothingNew: boolean;
+  /** True when new is exactly the same messages as prior. (A special case of nothingNew.) */
   identical: boolean;
   /** Longest contiguous run of identical messages found. */
   matched: number;
@@ -79,19 +85,36 @@ function longestRun(a: string[], b: string[]): number {
 }
 
 export function detectContinuation(prior: string, next: string): ContinuationResult {
-  const a = messageContents(prior);
-  const b = messageContents(next);
-  const none: ContinuationResult = { isContinuation: false, identical: false, matched: 0, priorLen: a.length };
+  const a = messageContents(prior); // stored prior
+  const b = messageContents(next); // new upload
+  const none: ContinuationResult = {
+    isContinuation: false,
+    nothingNew: false,
+    identical: false,
+    matched: 0,
+    priorLen: a.length,
+  };
 
   if (a.length < MIN_PRIOR) return none;
 
   const run = longestRun(a, b);
-  // Most of the prior must appear as ONE ordered block, and clear the absolute
-  // floor — that long ordered run is what unrelated-but-similar chats can't fake.
-  const enough = run >= MIN_RUN && run >= Math.ceil(a.length * RUN_RATIO);
-  if (!enough) return { ...none, matched: run };
+  // A long ordered run is what unrelated-but-similar chats can't fake. Below the
+  // absolute floor it's not the same conversation either way → fresh read.
+  if (run < MIN_RUN) return { ...none, matched: run };
 
+  const hasNewTail = b.length > run; // new messages beyond the shared block
+  const coversPrior = run >= Math.ceil(a.length * RUN_RATIO); // most of the PRIOR is in the run
+  const coversNew = run >= Math.ceil(b.length * RUN_RATIO); // most of the NEW upload is in the run
   const identical = run === a.length && b.length === a.length;
-  const hasTail = b.length > run; // genuinely new messages beyond the shared block
-  return { isContinuation: hasTail || identical, identical, matched: run, priorLen: a.length };
+
+  // Genuine continuation: the prior is (most of) a prefix of the new upload, plus a
+  // real new tail. This is the only case that fires the before/after.
+  const isContinuation = coversPrior && hasNewTail;
+  // Nothing new: identical re-send, OR a subset/earlier export — the new upload is
+  // contained in the prior (covered by the run) with no messages beyond it. The
+  // TAIL is the distinguisher: tail = continuation; no tail + covered = nothing new.
+  const subset = !hasNewTail && coversNew && b.length <= a.length;
+  const nothingNew = identical || subset;
+
+  return { isContinuation, nothingNew, identical, matched: run, priorLen: a.length };
 }

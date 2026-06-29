@@ -192,7 +192,8 @@ export default function Story() {
   // FLAG-46: set when this read is a detected continuation of a prior one — drives
   // suppressing the FLAG-34 question and fetching the what-changed delta.
   const continuationRef = useRef(false);
-  const identicalRef = useRef(false); // FLAG-46 Bug 2: identical re-send (chat-keyed)
+  // FLAG-46: identical re-send OR a subset/earlier upload — nothing new to diff (chat-keyed).
+  const nothingNewRef = useRef(false);
   const [delta, setDelta] = useState<DeltaChange[] | null>(null);
   const [nothingNew, setNothingNew] = useState(false);
   // FLAG-36: mirror of fromPerson, readable inside the []-dep startBgRead.
@@ -381,12 +382,12 @@ export default function Story() {
       // newest, not this one) and before reveal (so it's in the initial script).
       // Never blocks: any failure → no delta, just a normal read.
       let deltaChanges: DeltaChange[] = [];
-      const isIdenticalResend = continuationRef.current && identicalRef.current;
-      // FLAG-46 Bug 2: an identical re-send (same chat, no new messages) shows NO
-      // before/after — the delta is skipped entirely. Keyed on the conversation,
-      // so read/sub-score variance can't manufacture a fake change. Only a genuine
-      // continuation (new tail) fetches the delta.
-      if (continuationRef.current && !identicalRef.current && personId) {
+      // FLAG-46: only a GENUINE continuation (new tail beyond the stored prior)
+      // fetches the delta. An identical re-send OR a subset/earlier upload
+      // (nothingNew) shows NO before/after — keyed on the conversation, so read/
+      // sub-score variance can't manufacture a fake change. isContinuation and
+      // nothingNew are mutually exclusive by construction (tail vs no-tail).
+      if (continuationRef.current && personId) {
         try {
           const d = await fetch("/api/delta", {
             method: "POST",
@@ -400,7 +401,7 @@ export default function Story() {
       }
       // Only a REAL set of concrete changes; empty → no before/after shown.
       setDelta(deltaChanges.length > 0 ? deltaChanges : null);
-      setNothingNew(isIdenticalResend);
+      setNothingNew(nothingNewRef.current);
 
       setRead(read);
       // FLAG-43: was the read generated from a windowed (capped) conversation?
@@ -477,17 +478,18 @@ export default function Story() {
       // two never both reference the prior behaviour. Runs here, before any
       // question is built, so it can't fire after the question already showed.
       continuationRef.current = false;
-      identicalRef.current = false;
+      nothingNewRef.current = false;
       if (fromPerson && personId) {
         try {
           const prior = await getRecentConversations(personId, 1);
           if (prior[0]) {
             const c = detectContinuation(prior[0].text, answers.conversation);
             continuationRef.current = c.isContinuation;
-            // FLAG-46 Bug 2: an identical re-send (same messages, no new tail). Keyed
-            // on the CHAT, not the reading — so read/sub-score variance can't fake a
-            // change. Gates the delta off entirely (nothing new to show).
-            identicalRef.current = c.identical;
+            // FLAG-46: identical re-send OR a subset/earlier upload (no new tail
+            // beyond the stored prior). Keyed on the CHAT, not the reading — so
+            // read/sub-score variance can't fake a change. Gates the delta off and
+            // shows the calm "nothing new" note instead of a fresh read.
+            nothingNewRef.current = c.nothingNew;
           }
         } catch {
           /* detection failure → normal read + normal question (safe fallthrough) */
@@ -496,12 +498,14 @@ export default function Story() {
       if (cancelled) return;
 
       // FLAG-34: the backgrounded history question (from-person only) rides in
-      // FRONT of the generic clarify — UNLESS this is a continuation, where it's
-      // suppressed in favour of the delta. Generic clarify adds a 2nd question
-      // only when it genuinely finds a verdict-forking ambiguity.
-      const historyP = continuationRef.current
-        ? Promise.resolve("")
-        : (historyQRef.current ?? Promise.resolve("")).catch(() => "");
+      // FRONT of the generic clarify — UNLESS this is a continuation (delta carries
+      // the thread) or a nothing-new re-send (no fresh-read question). Generic
+      // clarify adds a 2nd question only when it genuinely finds a verdict-forking
+      // ambiguity.
+      const historyP =
+        continuationRef.current || nothingNewRef.current
+          ? Promise.resolve("")
+          : (historyQRef.current ?? Promise.resolve("")).catch(() => "");
       const genericP = fetch("/api/clarify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

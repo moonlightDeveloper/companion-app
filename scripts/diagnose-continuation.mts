@@ -65,7 +65,7 @@ async function main() {
   console.log(`prior >= MIN_PRIOR(8)?     ${a.length} → ${a.length >= MIN_PRIOR ? "ok" : "BELOW FLOOR — detection bails here"}`);
   console.log(`longest contiguous run     : ${r.matched}  (run floor: >= ${MIN_RUN})`);
   console.log(`ratio run/prior            : ${(a.length ? r.matched / a.length : 0).toFixed(2)}  (need >= ${RATIO} → ${need} msgs)`);
-  console.log(`isContinuation=${r.isContinuation}  identical=${r.identical}`);
+  console.log(`isContinuation=${r.isContinuation}  nothingNew=${r.nothingNew}  identical=${r.identical}`);
 
   console.log(`\n=== true overlap (ignores floors) ===`);
   console.log(`ordered opening prefix that aligns: ${prefix} of ${a.length} prior messages`);
@@ -77,7 +77,9 @@ async function main() {
 
   console.log("\n=== verdict ===");
   const aligns = prefix >= a.length - 1 && b.length > a.length; // prior ~fully inside new, with a tail
-  if (r.isContinuation) console.log("WOULD DETECT — delta fires.");
+  if (r.isContinuation) console.log("WOULD DETECT — before/after delta fires.");
+  else if (r.nothingNew)
+    console.log(`NOTHING NEW (${r.identical ? "identical re-send" : "subset / earlier upload"}) — shows the calm "nothing new since then" note, no before/after, no fresh-read question.`);
   else if (a.length < MIN_PRIOR)
     console.log(`MISS (FLOOR): prior normalized to ${a.length} msgs (< ${MIN_PRIOR}). Media/short messages shrink the count under the floor even on a real continuation. → lower MIN_PRIOR / MIN_RUN, or count pre-normalization.`);
   else if (aligns)
