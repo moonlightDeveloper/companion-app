@@ -2887,7 +2887,6 @@ function FixBackstop({
 }
 
 function ReplyHelper({ name, conversation }: { name: string; conversation: string }) {
-  const [open, setOpen] = useState(false);
   const [intent, setIntent] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [error, setError] = useState("");
@@ -2913,18 +2912,9 @@ function ReplyHelper({ name, conversation }: { name: string; conversation: strin
     }
   };
 
-  if (!open) {
-    return (
-      <button
-        className={styles.secondary}
-        style={{ display: "block", width: "100%", marginTop: 12 }}
-        onClick={() => setOpen(true)}
-      >
-        Want me to draft what you&rsquo;d send?
-      </button>
-    );
-  }
-
+  // One reply path: this is the real draft UI, opened directly by the "Help me
+  // reply" button (live read) or shown inline on a recent past report. No
+  // intermediate "Want me to draft…" prompt.
   return (
     <div className={styles.insight} style={{ marginTop: 12 }}>
       <div className={styles.k}>Help me reply</div>
