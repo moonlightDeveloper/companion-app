@@ -20,7 +20,7 @@
 import fs from "fs";
 import path from "path";
 import JSZip from "jszip";
-import { detectContinuation } from "../lib/continuation.ts";
+import { detectContinuation } from "../lib/continuation";
 
 async function loadText(file: string): Promise<string> {
   const buf = fs.readFileSync(file);
