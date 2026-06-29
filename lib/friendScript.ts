@@ -1,4 +1,4 @@
-import type { Read, ReadBar, ReadCard, DeltaChange } from "@/types";
+import type { Read, ReadBar, ReadCard } from "@/types";
 
 /**
  * FLAG-48: maps an existing analyze Read → the "friend talking it through"
@@ -19,7 +19,6 @@ export type FriendItem =
   | { t: "pop"; cls: "small" | "soft"; text: string }
   | { t: "bar"; bar: ReadBar }
   | { t: "card"; card: ReadCard }
-  | { t: "delta"; changes: DeltaChange[] }
   | { t: "nothingNew" }
   | { t: "move"; text: string };
 
@@ -34,20 +33,18 @@ function firstSentence(s: string): [string, string] {
 
 export function toScript(
   read: Read,
-  opts?: { trimmed?: boolean; delta?: DeltaChange[] | null; nothingNew?: boolean },
+  opts?: { trimmed?: boolean; nothingNew?: boolean },
 ): FriendItem[] {
   const items: FriendItem[] = [];
 
   items.push({ t: "type", cls: "big", text: read.headline });
   items.push({ t: "pop", cls: "small", text: DISCLAIMER });
   // FLAG-46 Bug 2: an identical re-send (same chat, no new messages) shows the
-  // "nothing new" note and NO before/after — keyed on the conversation, so read
-  // variance can't fake a change. Otherwise, a genuine continuation with REAL
-  // changes shows the concrete before → now contrast right after the verdict.
+  // "nothing new" note here in the auto-reveal. The directional "Since last time"
+  // section for a genuine continuation is NOT a script item — it renders below the
+  // read and reveals on SCROLL (DeltaSection), a clean handoff from the auto-reveal.
   if (opts?.nothingNew) {
     items.push({ t: "nothingNew" });
-  } else if (opts?.delta && opts.delta.length > 0) {
-    items.push({ t: "delta", changes: opts.delta });
   }
   // FLAG-43: only when the conversation was windowed for the API call. The full
   // conversation is still stored on-device; this just tells the user the read

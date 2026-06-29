@@ -2608,9 +2608,6 @@ const SHOW_FIX_BACKSTOP = false;
 const FRIEND = {
   THINK: 3400, TYPE_PER: 20, SPACE: 10, PUNCT: 120, TYPE_PRE: 300, TYPE_POST: 650,
   POP: 560, REVEAL: 820,
-  // FLAG-46 directional: ~1.9s between dimension reveals (matches the reference's
-  // 1100→3000 stagger), plus a tail so the last dimension finishes before the next item.
-  DELTA_FIRST: 250, DELTA_STAGGER: 1900, DELTA_TAIL: 1100,
 } as const;
 const FRIEND_PUNCT = /[.,;—?!]/;
 
@@ -2633,8 +2630,8 @@ function FriendRead({
   onReply: () => void;
 }) {
   const script = useMemo(
-    () => toScript(read, { trimmed, delta, nothingNew }),
-    [read, trimmed, delta, nothingNew],
+    () => toScript(read, { trimmed, nothingNew }),
+    [read, trimmed, nothingNew],
   );
   const [phase, setPhase] = useState<"thinking" | "flow">("thinking");
   const [shown, setShown] = useState(0);
@@ -2648,14 +2645,6 @@ function FriendRead({
 
   const scrollFollow = useCallback(() => {
     if (follow.current) endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, []);
-
-  // FLAG-46 directional: event-driven scroll — the DeltaSection calls this as EACH
-  // dimension reveals, so the scroll tracks the actual reveal (not a fixed timer).
-  // .dim has scroll-margin-bottom so the just-revealed dimension lands comfortably
-  // above the edge, not jammed. Respects the same manual-scroll-off grace.
-  const scrollToEl = useCallback((el: HTMLElement | null) => {
-    if (follow.current && el) el.scrollIntoView({ behavior: "smooth", block: "end" });
   }, []);
 
   const showAll = useCallback(() => {
@@ -2734,13 +2723,6 @@ function FriendRead({
           setTyping(null);
           setShown(i + 1);
           await wait(FRIEND.TYPE_POST);
-        } else if (item.t === "delta") {
-          // The directional section runs its OWN sequential dimension reveal +
-          // per-dim scroll inside DeltaSection. Hold the sequencer here until it has
-          // played all dimensions (dwell matched to the animation, not a fixed
-          // guess) so the next item doesn't reveal mid-animation.
-          setShown(i + 1);
-          await wait(item.changes.length * FRIEND.DELTA_STAGGER + FRIEND.DELTA_TAIL);
         } else {
           setShown(i + 1);
           scrollFollow();
@@ -2771,13 +2753,9 @@ function FriendRead({
         </div>
       ) : (
         <div className={styles.friendFlow}>
-          {script.slice(0, shown).map((item, i) =>
-            item.t === "delta" ? (
-              <DeltaSection key={i} changes={item.changes} onDimReveal={scrollToEl} />
-            ) : (
-              <FriendTurn key={i} item={item} />
-            ),
-          )}
+          {script.slice(0, shown).map((item, i) => (
+            <FriendTurn key={i} item={item} />
+          ))}
           {typingItem && typingItem.t === "type" && (
             <div className={styles.friendTurn}>
               <p
@@ -2787,6 +2765,11 @@ function FriendRead({
               </p>
             </div>
           )}
+          {/* FLAG-46 directional "Since last time": sits BELOW the friend-talking
+              read and reveals on SCROLL (IntersectionObserver), not on a timer.
+              Rendered only once the auto-reveal has finished — clean handoff, the
+              two reveal models never overlap. */}
+          {finished && delta && delta.length > 0 && <DeltaSection changes={delta} />}
           {/* Cross-device verify offer: the closing line after the whole report,
               non-sticky. */}
           {finished && (
@@ -2837,41 +2820,40 @@ const DIR_META: Record<DeltaChange["direction"], { arrow: string; label: string 
 
 /**
  * FLAG-46 directional "Since last time" — ported from directional-animated.html.
- * Each changed dimension reveals SEQUENTIALLY with: a directional pill (springs in),
- * a living arrow that loops a gentle drift (down=weakened, up=improved; held = no
- * drift), a spine that draws downward, and the before→now behavioural pair. Direction
- * only — never a score number (sub-scores are unstable, FLAG-49). onDimReveal fires
- * as each dimension appears so the page scroll tracks the real reveal (event-driven).
+ * Sits BELOW the friend-talking read and reveals on SCROLL: each dimension fades/
+ * rises in as it enters the viewport (IntersectionObserver), and at that moment its
+ * pill springs + arrow starts drifting (down=weakened, up=improved; held = no drift)
+ * + spine draws + "now" emphasises. Reveal-once (stays revealed on scroll back up).
+ * Direction only — never a score number (sub-scores are unstable, FLAG-49). No
+ * app-driven scrolling — the user's scroll paces it, which removes the sync problem.
  */
-function DeltaSection({
-  changes,
-  onDimReveal,
-}: {
-  changes: DeltaChange[];
-  onDimReveal: (el: HTMLElement | null) => void;
-}) {
+function DeltaSection({ changes }: { changes: DeltaChange[] }) {
   const reduce =
     typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const [shown, setShown] = useState(reduce ? changes.length : 0);
+  // reveal-once per dimension; reduced-motion → all revealed immediately.
+  const [revealed, setRevealed] = useState<boolean[]>(() => changes.map(() => reduce));
   const dimRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
-    if (reduce) {
-      onDimReveal(dimRefs.current[changes.length - 1] ?? null);
-      return;
-    }
-    const timers: number[] = [];
-    let i = 0;
-    const revealNext = () => {
-      const idx = i;
-      setShown(idx + 1);
-      // Scroll AFTER the dim has the .go class + a frame to lay out — event-driven.
-      timers.push(window.setTimeout(() => onDimReveal(dimRefs.current[idx] ?? null), 60));
-      i++;
-      if (i < changes.length) timers.push(window.setTimeout(revealNext, FRIEND.DELTA_STAGGER));
-    };
-    timers.push(window.setTimeout(revealNext, FRIEND.DELTA_FIRST));
-    return () => timers.forEach(clearTimeout);
+    if (reduce) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          const idx = Number((e.target as HTMLElement).dataset.idx);
+          setRevealed((r) => {
+            if (r[idx]) return r;
+            const next = [...r];
+            next[idx] = true;
+            return next;
+          });
+          io.unobserve(e.target); // reveal-once: stays revealed if they scroll back up
+        }
+      },
+      { threshold: 0.4, rootMargin: "0px 0px -12% 0px" },
+    );
+    dimRefs.current.forEach((el) => el && io.observe(el));
+    return () => io.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -2890,13 +2872,15 @@ function DeltaSection({
           return (
             <div
               key={i}
+              data-idx={i}
               ref={(el) => {
                 dimRefs.current[i] = el;
               }}
-              // .go gates every animation (pill, arrow drift, spine, legs). The drift
-              // selector is `.dim.go .dir.<direction> .arrow` — go on THIS div,
-              // direction on the pill, arrow on the inner span. Keep that nesting exact.
-              className={`${styles.dim} ${i < shown ? styles.go : ""}`}
+              // .go gates every animation (pill, arrow drift, spine, legs) and is now
+              // added when the dimension SCROLLS into view (IntersectionObserver),
+              // reveal-once. The drift selector is `.dim.go .dir.<direction> .arrow` —
+              // go on THIS div, direction on the pill, arrow on the inner span.
+              className={`${styles.dim} ${revealed[i] ? styles.go : ""}`}
             >
               <div className={styles.dimHead}>
                 <span className={styles.dimName}>{c.dimension}</span>
@@ -2995,8 +2979,6 @@ function FriendTurn({ item }: { item: FriendItem }) {
       </div>
     );
   }
-  // delta is rendered by DeltaSection (routed in FriendRead), never here.
-  if (item.t === "delta") return null;
   // move
   return (
     <div className={styles.friendTurn}>
