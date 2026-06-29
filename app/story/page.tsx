@@ -160,7 +160,9 @@ export default function Story() {
   const [error, setError] = useState("");
   const [email, setEmail] = useState("");
   const [consent, setConsent] = useState(false);
-  const [emailed, setEmailed] = useState(true);
+  // Email-delivery flag still tracked from the save response; no longer surfaced
+  // on the read screen (the closing line is the cross-device verify offer).
+  const [, setEmailed] = useState(true);
   const [roster, setRoster] = useState<RosterPerson[]>([]);
   const [personId, setPersonId] = useState<string | undefined>(undefined);
   const [signedIn, setSignedIn] = useState(false);
@@ -861,7 +863,6 @@ export default function Story() {
               status={status}
               read={read}
               error={error}
-              emailed={emailed}
               trimmed={readTrimmed}
               delta={delta}
               conversation={answers.conversation}
@@ -2180,37 +2181,6 @@ function WelcomeScreen({
   );
 }
 
-function XDeviceOffer() {
-  const [show, setShow] = useState(false);
-  useEffect(() => {
-    try {
-      if (!localStorage.getItem("companion_xdevice_offered")) setShow(true);
-    } catch {}
-  }, []);
-  if (!show) return null;
-  const dismiss = () => {
-    try {
-      localStorage.setItem("companion_xdevice_offered", "1");
-    } catch {}
-    setShow(false);
-  };
-  return (
-    <p className={styles.subtext} style={{ marginTop: 12, textAlign: "center" }}>
-      <Link href="/signin" onClick={dismiss} style={{ color: "var(--accent)" }}>
-        Want your reads on any device? Verify your email &rarr;
-      </Link>{" "}
-      <button
-        className={styles.ghost}
-        style={{ padding: "0 6px" }}
-        onClick={dismiss}
-        aria-label="Dismiss"
-      >
-        ✕
-      </button>
-    </p>
-  );
-}
-
 function EmailScreen({
   name,
   email,
@@ -2431,7 +2401,6 @@ function ReadScreen({
   status,
   read,
   error,
-  emailed,
   trimmed,
   delta,
   conversation,
@@ -2443,7 +2412,6 @@ function ReadScreen({
   status: Status;
   read: Read | null;
   error: string;
-  emailed: boolean;
   trimmed: boolean;
   delta: string | null;
   conversation: string;
@@ -2527,7 +2495,7 @@ function ReadScreen({
       {/* FLAG-48: the read is delivered as a friend talking it through. Pure
           presentation — the analysis/conclusions are unchanged (Option A maps the
           existing Read fields to typed/pop/reveal turns). */}
-      <FriendRead read={read} emailed={emailed} trimmed={trimmed} delta={delta} onReply={() => setReplyOpen(true)} />
+      <FriendRead read={read} trimmed={trimmed} delta={delta} onReply={() => setReplyOpen(true)} />
 
       {/* "Help me reply" reveals the existing reply-assist (§2.6). */}
       {replyOpen && conversation.trim() && (
@@ -2545,9 +2513,7 @@ function ReadScreen({
           onFix={onFix}
         />
       )}
-
-      {/* Cross-device upgrade — offered once, after value, never a wall. */}
-      <XDeviceOffer />
+      {/* The cross-device verify offer is the read's closing line (in FriendRead). */}
     </section>
   );
 }
@@ -2592,9 +2558,6 @@ function ReadBody({ read }: { read: Read }) {
 // Manual edit-and-reread entry point is hidden for now (mechanism kept dormant —
 // see FixBackstop + onFix). Flip to true to re-expose it; no rebuild needed.
 const SHOW_FIX_BACKSTOP = false;
-// Reply-assist entry hidden for now (mechanism kept dormant — see ReplyHelper +
-// the replyOpen wiring). Flip to true to re-expose "Help me reply".
-const SHOW_REPLY_HELP = false;
 
 /* ---------- FLAG-48: "friend talking it through" report delivery ---------- */
 // Exact timings ported from the approved report-friend-final.html.
@@ -2609,13 +2572,11 @@ const friendToneColor = (tone: string) =>
 
 function FriendRead({
   read,
-  emailed,
   trimmed,
   delta,
   onReply,
 }: {
   read: Read;
-  emailed: boolean;
   trimmed: boolean;
   delta: string | null;
   onReply: () => void;
@@ -2753,12 +2714,13 @@ function FriendRead({
               </p>
             </div>
           )}
-          {/* Save confirmation: shown at the END, after the whole report, as a
-              normal (non-sticky) closing line — not pinned, not early. */}
+          {/* Cross-device verify offer: the closing line after the whole report,
+              non-sticky. */}
           {finished && (
             <p className={`${styles.friendFine} ${styles.friendSaved}`}>
-              {emailed ? "Saved — a copy's in your inbox. " : "Saved here for you. "}
-              Only you see it.
+              <Link href="/signin" style={{ color: "var(--f-accent)" }}>
+                Want your reads on any device? Verify your email &rarr;
+              </Link>
             </p>
           )}
           <div ref={endRef} />
@@ -2770,16 +2732,14 @@ function FriendRead({
           padding handles the iPhone home bar. */}
       {finished && (
         <div className={styles.friendActions}>
-          {/* Reply-assist entry hidden for now (SHOW_REPLY_HELP=false); the
-              ReplyHelper mechanism (§2.6) stays intact + dormant — flip the flag to
-              re-expose, no rebuild. Keeping only the verify-your-email action. */}
-          {SHOW_REPLY_HELP && (
-            <button className={`${styles.friendBtn} ${styles.friendBtnDark}`} onClick={onReply}>
-              ✍️ Help me reply
-            </button>
-          )}
-          <Link href="/signin" className={`${styles.friendBtn} ${styles.friendBtnPrimary}`}>
-            Verify your email to keep your reads
+          <button className={`${styles.friendBtn} ${styles.friendBtnPrimary}`} onClick={onReply}>
+            ✍️ Help me reply
+          </button>
+          <Link href="/" className={`${styles.friendBtn} ${styles.friendBtnDark}`}>
+            Read another conversation
+          </Link>
+          <Link href="/signin" className={`${styles.friendBtn} ${styles.friendBtnGhost}`}>
+            See how this changes over time
           </Link>
         </div>
       )}
