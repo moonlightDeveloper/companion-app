@@ -892,23 +892,15 @@
   line-height: 1.45;
   color: var(--f-ink);
 }
-/* FLAG-48 sticky actions: sticky-bottom as the last in-flow child of the read —
-   stays reachable while scrolling, on both the desktop card (scrolls in .main) and
-   mobile page scroll. Solid fade so content reads behind its top edge; safe-area
-   padding clears the iPhone home bar. Self-clearing (last child) → no content hidden. */
-/* Save confirmation — closing line after the report, not sticky. */
+/* Save confirmation — closing line after the report. */
 .friendSaved {
   margin-top: 18px;
   text-align: center;
 }
+/* FLAG-48 actions: normal inline buttons at the END of the read — they scroll with
+   the content (NOT sticky), so nothing is covered and there's no reserved dead space. */
 .friendActions {
-  position: sticky;
-  bottom: 0;
-  z-index: 6;
   margin-top: 24px;
-  padding-top: 14px;
-  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-  background: linear-gradient(to top, var(--f-paper) 80%, rgba(245, 241, 235, 0));
   animation: friendRise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 .friendBtn {
