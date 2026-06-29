@@ -2608,6 +2608,9 @@ const SHOW_FIX_BACKSTOP = false;
 const FRIEND = {
   THINK: 3400, TYPE_PER: 20, SPACE: 10, PUNCT: 120, TYPE_PRE: 300, TYPE_POST: 650,
   POP: 560, REVEAL: 820,
+  // FLAG-46 directional: ~1.9s between dimension reveals (matches the reference's
+  // 1100→3000 stagger), plus a tail so the last dimension finishes before the next item.
+  DELTA_FIRST: 250, DELTA_STAGGER: 1900, DELTA_TAIL: 1100,
 } as const;
 const FRIEND_PUNCT = /[.,;—?!]/;
 
@@ -2645,6 +2648,14 @@ function FriendRead({
 
   const scrollFollow = useCallback(() => {
     if (follow.current) endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, []);
+
+  // FLAG-46 directional: event-driven scroll — the DeltaSection calls this as EACH
+  // dimension reveals, so the scroll tracks the actual reveal (not a fixed timer).
+  // .dim has scroll-margin-bottom so the just-revealed dimension lands comfortably
+  // above the edge, not jammed. Respects the same manual-scroll-off grace.
+  const scrollToEl = useCallback((el: HTMLElement | null) => {
+    if (follow.current && el) el.scrollIntoView({ behavior: "smooth", block: "end" });
   }, []);
 
   const showAll = useCallback(() => {
@@ -2723,6 +2734,13 @@ function FriendRead({
           setTyping(null);
           setShown(i + 1);
           await wait(FRIEND.TYPE_POST);
+        } else if (item.t === "delta") {
+          // The directional section runs its OWN sequential dimension reveal +
+          // per-dim scroll inside DeltaSection. Hold the sequencer here until it has
+          // played all dimensions (dwell matched to the animation, not a fixed
+          // guess) so the next item doesn't reveal mid-animation.
+          setShown(i + 1);
+          await wait(item.changes.length * FRIEND.DELTA_STAGGER + FRIEND.DELTA_TAIL);
         } else {
           setShown(i + 1);
           scrollFollow();
@@ -2753,9 +2771,13 @@ function FriendRead({
         </div>
       ) : (
         <div className={styles.friendFlow}>
-          {script.slice(0, shown).map((item, i) => (
-            <FriendTurn key={i} item={item} />
-          ))}
+          {script.slice(0, shown).map((item, i) =>
+            item.t === "delta" ? (
+              <DeltaSection key={i} changes={item.changes} onDimReveal={scrollToEl} />
+            ) : (
+              <FriendTurn key={i} item={item} />
+            ),
+          )}
           {typingItem && typingItem.t === "type" && (
             <div className={styles.friendTurn}>
               <p
@@ -2803,6 +2825,105 @@ function FriendRead({
           Show it all
         </button>
       )}
+    </div>
+  );
+}
+
+const DIR_META: Record<DeltaChange["direction"], { arrow: string; label: string }> = {
+  weakened: { arrow: "↓", label: "Weakened" },
+  improved: { arrow: "↑", label: "Improved" },
+  held: { arrow: "→", label: "Held" },
+};
+
+/**
+ * FLAG-46 directional "Since last time" — ported from directional-animated.html.
+ * Each changed dimension reveals SEQUENTIALLY with: a directional pill (springs in),
+ * a living arrow that loops a gentle drift (down=weakened, up=improved; held = no
+ * drift), a spine that draws downward, and the before→now behavioural pair. Direction
+ * only — never a score number (sub-scores are unstable, FLAG-49). onDimReveal fires
+ * as each dimension appears so the page scroll tracks the real reveal (event-driven).
+ */
+function DeltaSection({
+  changes,
+  onDimReveal,
+}: {
+  changes: DeltaChange[];
+  onDimReveal: (el: HTMLElement | null) => void;
+}) {
+  const reduce =
+    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const [shown, setShown] = useState(reduce ? changes.length : 0);
+  const dimRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  useEffect(() => {
+    if (reduce) {
+      onDimReveal(dimRefs.current[changes.length - 1] ?? null);
+      return;
+    }
+    const timers: number[] = [];
+    let i = 0;
+    const revealNext = () => {
+      const idx = i;
+      setShown(idx + 1);
+      // Scroll AFTER the dim has the .go class + a frame to lay out — event-driven.
+      timers.push(window.setTimeout(() => onDimReveal(dimRefs.current[idx] ?? null), 60));
+      i++;
+      if (i < changes.length) timers.push(window.setTimeout(revealNext, FRIEND.DELTA_STAGGER));
+    };
+    timers.push(window.setTimeout(revealNext, FRIEND.DELTA_FIRST));
+    return () => timers.forEach(clearTimeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className={styles.friendTurn}>
+      <div className={styles.deltaCard}>
+        <div className={styles.friendTiny}>Since last time</div>
+        {changes.map((c, i) => {
+          const meta = DIR_META[c.direction];
+          const spineCls =
+            c.direction === "improved"
+              ? styles.improvedSpine
+              : c.direction === "held"
+                ? styles.heldSpine
+                : "";
+          return (
+            <div
+              key={i}
+              ref={(el) => {
+                dimRefs.current[i] = el;
+              }}
+              // .go gates every animation (pill, arrow drift, spine, legs). The drift
+              // selector is `.dim.go .dir.<direction> .arrow` — go on THIS div,
+              // direction on the pill, arrow on the inner span. Keep that nesting exact.
+              className={`${styles.dim} ${i < shown ? styles.go : ""}`}
+            >
+              <div className={styles.dimHead}>
+                <span className={styles.dimName}>{c.dimension}</span>
+                <span className={`${styles.dir} ${styles[c.direction]}`}>
+                  <span className={styles.arrow}>{meta.arrow}</span> {meta.label}
+                </span>
+              </div>
+              <div className={styles.pair}>
+                <div className={`${styles.spine} ${spineCls}`} />
+                <div className={`${styles.leg} ${styles.before}`}>
+                  <div className={styles.legLabel}>Before</div>
+                  <div className={styles.legText}>{c.before}</div>
+                </div>
+                <div className={styles.arrowDown}>↓</div>
+                <div className={`${styles.leg} ${styles.now}`}>
+                  <div className={styles.legLabel}>Now</div>
+                  <div className={styles.legText}>{c.now}</div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        <p className={styles.deltaNote}>
+          Direction shows which way the behaviour moved &mdash; not a precise score. Read from the
+          new messages you added.
+        </p>
+      </div>
     </div>
   );
 }
@@ -2858,31 +2979,6 @@ function FriendTurn({ item }: { item: FriendItem }) {
       </div>
     );
   }
-  if (item.t === "delta") {
-    // FLAG-46: concrete before → now contrast, paired so the change is obvious at
-    // a glance. Each side is a specific observed behaviour; the user draws the
-    // conclusion. (Only shown when there's a real change — never a vague "shifted".)
-    return (
-      <div className={styles.friendTurn}>
-        <div className={styles.deltaCard}>
-          <div className={styles.friendTiny}>Since last time</div>
-          {item.changes.map((c, i) => (
-            <div key={i} className={styles.deltaRow}>
-              <div className={styles.deltaCell}>
-                <span className={styles.deltaLabel}>Before</span>
-                <span>{c.before}</span>
-              </div>
-              <div className={styles.deltaArrow} aria-hidden="true">↓</div>
-              <div className={`${styles.deltaCell} ${styles.deltaCellNow}`}>
-                <span className={styles.deltaLabel}>Now</span>
-                <span>{c.now}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
   if (item.t === "nothingNew") {
     // FLAG-46 Bug 2: identical re-send → no before/after, just say so and nudge
     // toward a fresh take. (The "Read another conversation" action sits below.)
@@ -2899,6 +2995,8 @@ function FriendTurn({ item }: { item: FriendItem }) {
       </div>
     );
   }
+  // delta is rendered by DeltaSection (routed in FriendRead), never here.
+  if (item.t === "delta") return null;
   // move
   return (
     <div className={styles.friendTurn}>
