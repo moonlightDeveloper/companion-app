@@ -896,6 +896,11 @@
    stays reachable while scrolling, on both the desktop card (scrolls in .main) and
    mobile page scroll. Solid fade so content reads behind its top edge; safe-area
    padding clears the iPhone home bar. Self-clearing (last child) → no content hidden. */
+/* Save confirmation — closing line after the report, not sticky. */
+.friendSaved {
+  margin-top: 18px;
+  text-align: center;
+}
 .friendActions {
   position: sticky;
   bottom: 0;

@@ -2750,6 +2750,14 @@ function FriendRead({
               </p>
             </div>
           )}
+          {/* Save confirmation: shown at the END, after the whole report, as a
+              normal (non-sticky) closing line — not pinned, not early. */}
+          {finished && (
+            <p className={`${styles.friendFine} ${styles.friendSaved}`}>
+              {emailed ? "Saved — a copy's in your inbox. " : "Saved here for you. "}
+              Only you see it.
+            </p>
+          )}
           <div ref={endRef} />
         </div>
       )}
@@ -2768,10 +2776,6 @@ function FriendRead({
           <Link href="/signin" className={`${styles.friendBtn} ${styles.friendBtnGhost}`}>
             See how this changes over time
           </Link>
-          <p className={styles.friendFine}>
-            {emailed ? "Saved — a copy's in your inbox. " : "Saved here for you. "}
-            Only you see it.
-          </p>
         </div>
       )}
       {!finished && (
