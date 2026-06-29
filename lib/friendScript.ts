@@ -20,6 +20,7 @@ export type FriendItem =
   | { t: "bar"; bar: ReadBar }
   | { t: "card"; card: ReadCard }
   | { t: "delta"; changes: DeltaChange[] }
+  | { t: "nothingNew" }
   | { t: "move"; text: string };
 
 const DISCLAIMER =
@@ -31,16 +32,21 @@ function firstSentence(s: string): [string, string] {
   return m ? [m[1].trim(), m[2].trim()] : [s.trim(), ""];
 }
 
-export function toScript(read: Read, opts?: { trimmed?: boolean; delta?: DeltaChange[] | null }): FriendItem[] {
+export function toScript(
+  read: Read,
+  opts?: { trimmed?: boolean; delta?: DeltaChange[] | null; nothingNew?: boolean },
+): FriendItem[] {
   const items: FriendItem[] = [];
 
   items.push({ t: "type", cls: "big", text: read.headline });
   items.push({ t: "pop", cls: "small", text: DISCLAIMER });
-  // FLAG-46: on a re-sent (continued) conversation with REAL changes, show the
-  // concrete before → now contrast right after the verdict. Empty/absent → nothing
-  // is shown (the "nothing meaningful changed" case is never padded with a vague
-  // before/after).
-  if (opts?.delta && opts.delta.length > 0) {
+  // FLAG-46 Bug 2: an identical re-send (same chat, no new messages) shows the
+  // "nothing new" note and NO before/after — keyed on the conversation, so read
+  // variance can't fake a change. Otherwise, a genuine continuation with REAL
+  // changes shows the concrete before → now contrast right after the verdict.
+  if (opts?.nothingNew) {
+    items.push({ t: "nothingNew" });
+  } else if (opts?.delta && opts.delta.length > 0) {
     items.push({ t: "delta", changes: opts.delta });
   }
   // FLAG-43: only when the conversation was windowed for the API call. The full
