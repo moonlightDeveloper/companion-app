@@ -2422,6 +2422,12 @@ function ReadScreen({
   // FLAG-48: "Help me reply" in the friend delivery reveals the existing
   // ReplyHelper (§2.6) — no new reply logic.
   const [replyOpen, setReplyOpen] = useState(false);
+  const replyRef = useRef<HTMLDivElement>(null);
+  // The reply UI mounts below the report + the sticky action bar; bring it into
+  // view when opened so the tap visibly does something (not silently off-screen).
+  useEffect(() => {
+    if (replyOpen) replyRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [replyOpen]);
   if (status === "loading" || status === "idle") {
     return (
       <section className={styles.screen}>
@@ -2497,9 +2503,12 @@ function ReadScreen({
           existing Read fields to typed/pop/reveal turns). */}
       <FriendRead read={read} trimmed={trimmed} delta={delta} onReply={() => setReplyOpen(true)} />
 
-      {/* "Help me reply" reveals the existing reply-assist (§2.6). */}
+      {/* "Help me reply" reveals the existing reply-assist (§2.6), scrolled into
+          view (it mounts below the sticky action bar). */}
       {replyOpen && conversation.trim() && (
-        <ReplyHelper name={name} conversation={conversation} />
+        <div ref={replyRef} style={{ scrollMarginTop: 16 }}>
+          <ReplyHelper name={name} conversation={conversation} />
+        </div>
       )}
 
       {/* Backstop: catch a confident misread (wrong-side attribution) or enrich
