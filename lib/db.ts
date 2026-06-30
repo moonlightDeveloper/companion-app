@@ -211,6 +211,21 @@ export async function updateReport(
   return rows.length > 0;
 }
 
+/**
+ * Delete a person and (via the reports FK cascade) all their reports.
+ * Ownership-scoped: the `user_id` clause guarantees one user can never delete
+ * another's person. Returns true if a row was actually deleted.
+ */
+export async function deletePerson(userId: string, personId: string): Promise<boolean> {
+  const sql = getSql();
+  await ensureSchema();
+  const rows = await sql`
+    DELETE FROM persons WHERE id = ${personId} AND user_id = ${userId}
+    RETURNING id
+  `;
+  return rows.length > 0;
+}
+
 export interface StoredReport {
   id: string;
   result: Read;
