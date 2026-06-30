@@ -108,6 +108,21 @@ export async function saveConversation(c: {
   }
 }
 
+/** Remove all of a person's stored conversations — used when deleting a person.
+ *  Best-effort: the server is the source of truth for the roster, so a local
+ *  failure here can't resurrect a deleted person; it just leaves dead local rows
+ *  that the TTL eventually evicts. */
+export async function deletePersonConversations(personId: string): Promise<void> {
+  if (!hasIDB() || !personId) return;
+  try {
+    const db = await openDB();
+    const ids = (await byPerson(db, personId)).map((c) => c.reportId);
+    await deleteKeys(db, ids);
+  } catch {
+    /* never block the delete on local cleanup */
+  }
+}
+
 /** The text of one stored conversation, or null if it's gone. */
 export async function getConversation(reportId: string): Promise<string | null> {
   if (!hasIDB()) return null;
@@ -119,6 +134,27 @@ export async function getConversation(reportId: string): Promise<string | null> 
     return r?.text ?? null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Drop conversations whose personId is not in the live roster — orphans left by a
+ * person delete on another device, or by an identity change. The server roster is
+ * the source of truth; a conversation under no current person is unreachable, so
+ * we evict it. No-ops on an empty roster (we never wipe the store when we can't
+ * confirm what's valid — e.g. an anonymous/unrecognized boot). Best-effort.
+ */
+export async function pruneOrphanConversations(validPersonIds: string[]): Promise<void> {
+  if (!hasIDB() || validPersonIds.length === 0) return;
+  try {
+    const db = await openDB();
+    const valid = new Set(validPersonIds);
+    const orphans = (await getAll(db))
+      .filter((c) => !valid.has(c.personId))
+      .map((c) => c.reportId);
+    await deleteKeys(db, orphans);
+  } catch {
+    /* best-effort; orphan cleanup must never block the app */
   }
 }
 

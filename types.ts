@@ -42,6 +42,11 @@ export interface Read {
   /** Grounding note; if healthy, says they can relax. */
   where_this_leaves_you: string;
   safety: ReadSafety;
+  /** FLAG-46: the "Since last time" before/after, PERSISTED with the report when it
+   *  was created on a continuation, so recalling the report shows the same comparison
+   *  it had originally. Absent on first reads / fresh reads (nothing to compare). Not
+   *  emitted by the model — attached at save time from the /api/delta result. */
+  delta?: DeltaChange[];
 }
 
 /** One attributed line of a conversation extracted from screenshots. */
@@ -66,9 +71,14 @@ export interface Transcript {
   notAChat?: boolean;
 }
 
-/** FLAG-46: one concrete behavioural change, paired before → now. Both sides are
+/** FLAG-46: one concrete behavioural change, paired before → now, with a DIRECTION
+ *  (never a precise score — sub-scores are unstable, FLAG-49). Both text sides are
  *  specific observable behaviours (never a vague "he changed"). */
 export interface DeltaChange {
+  /** Short behaviour-dimension name, e.g. "Respect for your limits". */
+  dimension: string;
+  /** Which way it moved. weakened = terracotta ↓, improved = sage ↑, held = grey →. */
+  direction: "weakened" | "improved" | "held";
   /** The specific observable behaviour in the PRIOR read. */
   before: string;
   /** The specific observable behaviour NOW. */

@@ -312,6 +312,78 @@
   font-size: 22px;
   color: var(--accent);
 }
+/* Per-person roster row: the pick button + a delete affordance beside it. */
+.optionRow {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.optionRow .option {
+  flex: 1;
+  min-width: 0;
+}
+.deleteBtn {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 18px;
+  padding: 0 14px;
+  cursor: pointer;
+  color: var(--muted);
+  transition: 0.16s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.deleteBtn:hover {
+  border-color: #dfb8ac;
+  color: #c0392b;
+}
+/* Inline confirm replacing the row — destructive, so it asks first. */
+.confirmRow {
+  border: 1px solid #e6c3ba;
+  background: #fdf6f4;
+  border-radius: 18px;
+  padding: 15px 16px;
+}
+.confirmText {
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+}
+.confirmError {
+  color: #c0392b;
+  font-size: 13px;
+  margin: 8px 0 0;
+}
+.confirmActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.confirmCancel,
+.confirmDelete {
+  border-radius: 999px;
+  padding: 9px 18px;
+  font-weight: 760;
+  cursor: pointer;
+  transition: 0.16s ease;
+}
+.confirmCancel {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+}
+.confirmDelete {
+  border: 1px solid #c0392b;
+  background: #c0392b;
+  color: #fff;
+}
+.confirmDelete:disabled,
+.confirmCancel:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 /* FLAG-32: WhatsApp import — platform toggle + export steps. */
 .waToggle {
   display: flex;
@@ -954,6 +1026,15 @@
   font-family: var(--font-inter), sans-serif;
   z-index: 10;
 }
+/* Reveal-on-scroll wrapper for everything below the opening: hidden until it enters
+   the viewport, then fades/rises in (RevealTurn adds .revealShown). No typing. */
+.revealTurn {
+  opacity: 0;
+  transform: translateY(12px);
+}
+.revealTurn.revealShown {
+  animation: friendRise 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+}
 @keyframes friendRise {
   to {
     opacity: 1;
@@ -977,7 +1058,8 @@
   .friendMove,
   .friendActions,
   .deltaCard,
-  .friendFill {
+  .friendFill,
+  .revealTurn {
     animation-duration: 0.01ms !important;
     opacity: 1 !important;
     transform: none !important;
@@ -1053,47 +1135,239 @@
   flex-direction: column;
 }
 
-/* FLAG-46 delta: concrete before → now contrast, paired so the change reads at a
-   glance. Scoped to the friend palette (--f-*). */
+/* FLAG-46 directional "Since last time" — ported from directional-animated.html.
+   Direction (weakened/improved/held) + before→now behavioural pair, revealed
+   sequentially, with a living drift arrow and a self-drawing spine. NO score
+   numbers. Scoped to .friendRoot; the direction colours live on .deltaCard so the
+   dim/pill/spine descendants inherit them. */
 .deltaCard {
+  --weakened: #b85740;
+  --improved: #7f8c58;
+  --held: #9a8e81;
+  --before: #b6a998;
   opacity: 0;
   transform: translateY(10px);
-  animation: friendRise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+  animation: friendRise 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
   background: var(--f-bubble);
-  border-radius: 18px;
-  padding: 16px 18px;
+  border-radius: 20px;
+  padding: 6px 20px 18px;
   border: 1px solid rgba(230, 220, 207, 0.7);
-  box-shadow: 0 1px 2px rgba(42, 35, 29, 0.04), 0 10px 28px rgba(42, 35, 29, 0.07);
+  box-shadow: 0 1px 2px rgba(42, 35, 29, 0.04), 0 12px 30px rgba(42, 35, 29, 0.07);
 }
-.deltaRow {
-  display: grid;
-  gap: 6px;
-  margin-top: 12px;
+.dim {
+  padding: 20px 0;
+  border-bottom: 1px solid var(--f-line);
 }
-.deltaCell {
+.dim:last-of-type {
+  border-bottom: 0;
+  padding-bottom: 4px;
+}
+.dimHead {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 15px;
-  line-height: 1.4;
-  color: var(--f-muted);
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
 }
-.deltaCellNow {
+.dimName {
+  font-family: var(--font-newsreader), serif;
+  font-size: 18px;
+  font-weight: 600;
   color: var(--f-ink);
-  font-weight: 500;
+  letter-spacing: -0.01em;
+  opacity: 0;
 }
-.deltaLabel {
-  font-size: 10px;
+.dim.go .dimName {
+  animation: friendRise 0.6s ease 0.15s forwards;
+}
+.dir {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 13px;
+  border-radius: 999px;
+  white-space: nowrap;
+  opacity: 0;
+  transform: scale(0.8);
+}
+.dir .arrow {
+  font-size: 16px;
+  line-height: 1;
+  display: inline-block;
+}
+.weakened {
+  color: var(--weakened);
+  background: rgba(184, 87, 64, 0.1);
+}
+.improved {
+  color: var(--improved);
+  background: rgba(127, 140, 88, 0.13);
+}
+.held {
+  color: var(--held);
+  background: rgba(154, 142, 129, 0.12);
+}
+.dim.go .dir {
+  animation: fPillPop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.35s forwards;
+}
+/* the arrow lands, then loops a gentle continuous drift (down=weakened, up=improved).
+   held has NO drift rule — a held arrow must not move. */
+.dim.go .dir.weakened .arrow {
+  animation: fArrowDrop 1s cubic-bezier(0.5, 0, 0.4, 1) 0.25s, fDriftDown 1.5s ease-in-out 1.4s infinite;
+}
+.dim.go .dir.improved .arrow {
+  animation: fArrowRise 1s cubic-bezier(0.5, 0, 0.4, 1) 0.25s, fDriftUp 1.5s ease-in-out 1.4s infinite;
+}
+.pair {
+  position: relative;
+  padding-left: 20px;
+}
+.spine {
+  position: absolute;
+  left: 4px;
+  top: 8px;
+  width: 2px;
+  border-radius: 2px;
+  height: 0;
+  background: linear-gradient(var(--before), var(--weakened));
+}
+.improvedSpine {
+  background: linear-gradient(var(--before), var(--improved));
+}
+.heldSpine {
+  background: linear-gradient(var(--before), var(--held));
+}
+.dim.go .spine {
+  animation: fDrawSpine 1s cubic-bezier(0.4, 0, 0.2, 1) 0.5s forwards;
+}
+.spine::after {
+  content: "";
+  position: absolute;
+  left: -3px;
+  top: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--weakened);
+  opacity: 0;
+}
+.improvedSpine::after {
+  background: var(--improved);
+}
+.heldSpine::after {
+  background: var(--held);
+}
+.dim.go .spine::after {
+  animation: fRideDown 1s cubic-bezier(0.4, 0, 0.2, 1) 0.5s forwards;
+}
+.leg {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.legLabel {
+  font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
+  margin-bottom: 5px;
+}
+.before .legLabel {
   color: var(--f-muted);
 }
-.deltaCellNow .deltaLabel {
+.now .legLabel {
   color: var(--f-accent);
 }
-.deltaArrow {
-  font-size: 14px;
+.legText {
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+.before .legText {
+  color: var(--f-muted);
+}
+.now .legText {
+  color: var(--f-ink);
+  font-size: 15px;
+  font-weight: 450;
+}
+.dim.go .before {
+  animation: fLegIn 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) 0.5s forwards;
+}
+.dim.go .now {
+  animation: fLegInEmph 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 1.1s forwards;
+}
+.arrowDown {
   color: var(--f-accent);
-  line-height: 1;
+  font-size: 15px;
+  margin: 8px 0;
+  opacity: 0;
+}
+.dim.go .arrowDown {
+  animation: fade 0.4s ease 0.9s forwards;
+}
+.deltaNote {
+  font-size: 12px;
+  color: var(--f-muted);
+  margin-top: 16px;
+  line-height: 1.5;
+  font-style: italic;
+}
+@keyframes fPillPop {
+  0% { opacity: 0; transform: scale(0.8); }
+  60% { opacity: 1; transform: scale(1.06); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes fArrowDrop {
+  0% { transform: translateY(-6px); }
+  55% { transform: translateY(3px); }
+  100% { transform: translateY(0); }
+}
+@keyframes fArrowRise {
+  0% { transform: translateY(6px); }
+  55% { transform: translateY(-3px); }
+  100% { transform: translateY(0); }
+}
+@keyframes fDriftDown {
+  0% { transform: translateY(-2px); opacity: 0.6; }
+  50% { transform: translateY(3px); opacity: 1; }
+  100% { transform: translateY(-2px); opacity: 0.6; }
+}
+@keyframes fDriftUp {
+  0% { transform: translateY(2px); opacity: 0.6; }
+  50% { transform: translateY(-3px); opacity: 1; }
+  100% { transform: translateY(2px); opacity: 0.6; }
+}
+@keyframes fDrawSpine {
+  to { height: calc(100% - 16px); }
+}
+@keyframes fRideDown {
+  0% { opacity: 1; top: 0; }
+  90% { opacity: 1; }
+  100% { opacity: 0; top: calc(100% - 16px); }
+}
+@keyframes fLegIn {
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fLegInEmph {
+  0% { opacity: 0; transform: translateY(8px); }
+  70% { opacity: 1; transform: translateY(-2px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .deltaCard,
+  .dimName,
+  .dir,
+  .dir .arrow,
+  .leg,
+  .arrowDown,
+  .spine,
+  .spine::after {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .spine {
+    height: calc(100% - 16px) !important;
+  }
 }

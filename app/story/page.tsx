@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   DndContext,
   closestCenter,
@@ -21,7 +21,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { Intake, Read, ReplyDraft, TranscriptMessage, DeltaChange } from "@/types";
-import { saveConversation, evictExpired, getConversation, getRecentConversations } from "@/lib/localConversations";
+import { saveConversation, evictExpired, getConversation, getRecentConversations, deletePersonConversations, pruneOrphanConversations } from "@/lib/localConversations";
 import { detectContinuation } from "@/lib/continuation";
 import { MAX_IMAGES } from "@/lib/cap";
 import { parseWhatsAppExport, type ParsedChat } from "@/lib/whatsapp";
@@ -192,7 +192,8 @@ export default function Story() {
   // FLAG-46: set when this read is a detected continuation of a prior one — drives
   // suppressing the FLAG-34 question and fetching the what-changed delta.
   const continuationRef = useRef(false);
-  const identicalRef = useRef(false); // FLAG-46 Bug 2: identical re-send (chat-keyed)
+  // FLAG-46: identical re-send OR a subset/earlier upload — nothing new to diff (chat-keyed).
+  const nothingNewRef = useRef(false);
   const [delta, setDelta] = useState<DeltaChange[] | null>(null);
   const [nothingNew, setNothingNew] = useState(false);
   // FLAG-36: mirror of fromPerson, readable inside the []-dep startBgRead.
@@ -381,12 +382,12 @@ export default function Story() {
       // newest, not this one) and before reveal (so it's in the initial script).
       // Never blocks: any failure → no delta, just a normal read.
       let deltaChanges: DeltaChange[] = [];
-      const isIdenticalResend = continuationRef.current && identicalRef.current;
-      // FLAG-46 Bug 2: an identical re-send (same chat, no new messages) shows NO
-      // before/after — the delta is skipped entirely. Keyed on the conversation,
-      // so read/sub-score variance can't manufacture a fake change. Only a genuine
-      // continuation (new tail) fetches the delta.
-      if (continuationRef.current && !identicalRef.current && personId) {
+      // FLAG-46: only a GENUINE continuation (new tail beyond the stored prior)
+      // fetches the delta. An identical re-send OR a subset/earlier upload
+      // (nothingNew) shows NO before/after — keyed on the conversation, so read/
+      // sub-score variance can't manufacture a fake change. isContinuation and
+      // nothingNew are mutually exclusive by construction (tail vs no-tail).
+      if (continuationRef.current && personId) {
         try {
           const d = await fetch("/api/delta", {
             method: "POST",
@@ -400,7 +401,7 @@ export default function Story() {
       }
       // Only a REAL set of concrete changes; empty → no before/after shown.
       setDelta(deltaChanges.length > 0 ? deltaChanges : null);
-      setNothingNew(isIdenticalResend);
+      setNothingNew(nothingNewRef.current);
 
       setRead(read);
       // FLAG-43: was the read generated from a windowed (capped) conversation?
@@ -414,7 +415,10 @@ export default function Story() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          read,
+          // FLAG-46: persist the before/after WITH the report on a continuation, so
+          // recalling it shows the same "Since last time" it had originally. Absent
+          // on a fresh read → nothing attached → no section on recall.
+          read: deltaChanges.length > 0 ? { ...read, delta: deltaChanges } : read,
           name: answers.name,
           email,
           consent,
@@ -477,17 +481,18 @@ export default function Story() {
       // two never both reference the prior behaviour. Runs here, before any
       // question is built, so it can't fire after the question already showed.
       continuationRef.current = false;
-      identicalRef.current = false;
+      nothingNewRef.current = false;
       if (fromPerson && personId) {
         try {
           const prior = await getRecentConversations(personId, 1);
           if (prior[0]) {
             const c = detectContinuation(prior[0].text, answers.conversation);
             continuationRef.current = c.isContinuation;
-            // FLAG-46 Bug 2: an identical re-send (same messages, no new tail). Keyed
-            // on the CHAT, not the reading — so read/sub-score variance can't fake a
-            // change. Gates the delta off entirely (nothing new to show).
-            identicalRef.current = c.identical;
+            // FLAG-46: identical re-send OR a subset/earlier upload (no new tail
+            // beyond the stored prior). Keyed on the CHAT, not the reading — so
+            // read/sub-score variance can't fake a change. Gates the delta off and
+            // shows the calm "nothing new" note instead of a fresh read.
+            nothingNewRef.current = c.nothingNew;
           }
         } catch {
           /* detection failure → normal read + normal question (safe fallthrough) */
@@ -496,12 +501,14 @@ export default function Story() {
       if (cancelled) return;
 
       // FLAG-34: the backgrounded history question (from-person only) rides in
-      // FRONT of the generic clarify — UNLESS this is a continuation, where it's
-      // suppressed in favour of the delta. Generic clarify adds a 2nd question
-      // only when it genuinely finds a verdict-forking ambiguity.
-      const historyP = continuationRef.current
-        ? Promise.resolve("")
-        : (historyQRef.current ?? Promise.resolve("")).catch(() => "");
+      // FRONT of the generic clarify — UNLESS this is a continuation (delta carries
+      // the thread) or a nothing-new re-send (no fresh-read question). Generic
+      // clarify adds a 2nd question only when it genuinely finds a verdict-forking
+      // ambiguity.
+      const historyP =
+        continuationRef.current || nothingNewRef.current
+          ? Promise.resolve("")
+          : (historyQRef.current ?? Promise.resolve("")).catch(() => "");
       const genericP = fetch("/api/clarify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -555,7 +562,13 @@ export default function Story() {
         if (typeof me.email === "string") setEmail(me.email);
       }
     });
-    personsP.then(setRoster);
+    personsP.then((persons) => {
+      setRoster(persons);
+      // Evict on-device conversations orphaned by a person delete (this or another
+      // device) or an identity change — anything under no live person. Server roster
+      // is source of truth; no-ops on an empty roster (see pruneOrphanConversations).
+      pruneOrphanConversations(persons.map((p) => p.id));
+    });
 
     // Screen lane — decided ONCE. A cold/hung check degrades to first-time after
     // a cap (safe — "treated as new"), never stuck on the splash.
@@ -682,6 +695,20 @@ export default function Story() {
                 historyQRef.current = null; // new person → no history question
                 go("name");
               }}
+              onDelete={async (p) => {
+                // Server is the source of truth for the roster: delete there first,
+                // and only mirror locally + drop from the list once it confirms — so a
+                // failed/offline server delete never leaves a ghost-free roster while
+                // the person still exists on the server (or vice versa).
+                const ok = await fetch(`/api/persons/${p.id}`, { method: "DELETE" })
+                  .then((r) => (r.ok ? r.json() : null))
+                  .then((d) => d?.ok === true)
+                  .catch(() => false);
+                if (!ok) return false;
+                await deletePersonConversations(p.id); // local cleanup (best-effort)
+                setRoster((rs) => rs.filter((x) => x.id !== p.id));
+                return true;
+              }}
             />
           )}
 
@@ -709,7 +736,14 @@ export default function Story() {
                   : null;
                 go("paste");
               }}
-              onSeePast={() => go("history")}
+              onShowPrevious={() => {
+                // Read-only recall of the most recent saved read (newest first).
+                // No re-analyze — open the stored report in full; back returns here.
+                if (personReports[0]) {
+                  setSelectedReport(personReports[0]);
+                  go("report");
+                }
+              }}
             />
           )}
 
@@ -1190,12 +1224,26 @@ function PickScreen({
   roster,
   onPick,
   onNew,
+  onDelete,
 }: {
   roster: RosterPerson[];
   onPick: (p: RosterPerson) => void;
   onNew: () => void;
+  onDelete: (p: RosterPerson) => Promise<boolean>;
 }) {
   const { display, done } = useTypewriter("Who is this about?");
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [errorId, setErrorId] = useState<string | null>(null);
+
+  async function doDelete(p: RosterPerson) {
+    setBusyId(p.id);
+    setErrorId(null);
+    const ok = await onDelete(p); // on success the row leaves the roster on its own
+    setBusyId(null);
+    if (!ok) setErrorId(p.id); // keep the confirm open so they can retry
+  }
+
   return (
     <section className={styles.screen}>
       <div className={styles.stepHead}>
@@ -1210,14 +1258,64 @@ function PickScreen({
       </div>
       {done && (
         <div className={styles.options}>
-          {roster.map((p) => (
-            <button key={p.id} className={styles.option} onClick={() => onPick(p)}>
-              <span>
-                {p.nickname}
-                {p.differentiator ? ` – ${p.differentiator}` : ""}
-              </span>
-            </button>
-          ))}
+          {roster.map((p) =>
+            confirmingId === p.id ? (
+              <div key={p.id} className={styles.confirmRow}>
+                <p className={styles.confirmText}>
+                  Delete {p.nickname} and their history? This can&rsquo;t be undone.
+                </p>
+                {errorId === p.id && (
+                  <p className={styles.confirmError}>Couldn&rsquo;t delete &mdash; try again.</p>
+                )}
+                <div className={styles.confirmActions}>
+                  <button
+                    className={styles.confirmCancel}
+                    onClick={() => {
+                      setConfirmingId(null);
+                      setErrorId(null);
+                    }}
+                    disabled={busyId === p.id}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className={styles.confirmDelete}
+                    onClick={() => doDelete(p)}
+                    disabled={busyId === p.id}
+                  >
+                    {busyId === p.id ? "Deleting…" : "Delete"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div key={p.id} className={styles.optionRow}>
+                <button className={styles.option} onClick={() => onPick(p)}>
+                  <span>
+                    {p.nickname}
+                    {p.differentiator ? ` – ${p.differentiator}` : ""}
+                  </span>
+                </button>
+                <button
+                  className={styles.deleteBtn}
+                  aria-label={`Delete ${p.nickname}`}
+                  onClick={() => {
+                    setErrorId(null);
+                    setConfirmingId(p.id);
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14"
+                      stroke="currentColor"
+                      strokeWidth="1.7"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              </div>
+            ),
+          )}
           <button className={styles.option} onClick={onNew}>
             <span>+ Someone new</span>
           </button>
@@ -2301,13 +2399,13 @@ function PersonScreen({
   reports,
   pattern,
   onNewReport,
-  onSeePast,
+  onShowPrevious,
 }: {
   nickname: string;
   reports: ClientReport[];
   pattern: string | null;
   onNewReport: () => void;
-  onSeePast: () => void;
+  onShowPrevious: () => void;
 }) {
   const count = reports.length;
   const { display } = useTypewriter(`Your reads about ${nickname}`);
@@ -2336,13 +2434,15 @@ function PersonScreen({
         <button className={styles.primary} onClick={onNewReport}>
           New report
         </button>
+        {/* View last time's read in full (read-only recall) before deciding to
+            re-read. Only shown when there's a saved read to open. */}
         {count > 0 && (
           <button
             className={styles.ghost}
             style={{ display: "block", width: "100%", marginTop: 8 }}
-            onClick={onSeePast}
+            onClick={onShowPrevious}
           >
-            See past reads
+            Show my last read
           </button>
         )}
       </div>
@@ -2425,6 +2525,17 @@ function ReportScreen({
           <div className={styles.status}>
             <span className={styles.pill}>{read.status_tag}</span>
           </div>
+          {/* FLAG-46: the persisted "Since last time" before/after, shown in its
+              original place (above the read body) exactly as the report had it. Only
+              present when this report was a continuation; absent on a first read. The
+              .friendRoot wrapper scopes the directional card's theme vars (they don't
+              leak into the rest of the report). revealAll → shown at once (this is a
+              static recall, not the friend-talking reveal). */}
+          {read.delta && read.delta.length > 0 && (
+            <div className={styles.friendRoot}>
+              <DeltaSection changes={read.delta} revealAll={true} />
+            </div>
+          )}
           <ReadBody read={read} />
           {canReply && conversation && conversation.trim() && (
             <ReplyHelper name={nickname} conversation={conversation} />
@@ -2610,6 +2721,10 @@ const FRIEND = {
   POP: 560, REVEAL: 820,
 } as const;
 const FRIEND_PUNCT = /[.,;—?!]/;
+// FLAG-46: the directional "Since last time" delta renders after the first two
+// script turns (headline + the "reading what they do" subhead) and before the read
+// body. toScript always emits those two first, so this index is stable.
+const DELTA_AFTER = 2;
 
 const friendToneColor = (tone: string) =>
   tone === "good" ? "var(--f-good)" : tone === "low" ? "var(--f-concern)" : "var(--f-warm)";
@@ -2630,65 +2745,40 @@ function FriendRead({
   onReply: () => void;
 }) {
   const script = useMemo(
-    () => toScript(read, { trimmed, delta, nothingNew }),
-    [read, trimmed, delta, nothingNew],
+    () => toScript(read, { trimmed, nothingNew }),
+    [read, trimmed, nothingNew],
   );
   const [phase, setPhase] = useState<"thinking" | "flow">("thinking");
+  // `shown` counts the OPENING turns committed (0..DELTA_AFTER). Only the opening is
+  // timer-sequenced + typed; everything below renders at once on openingDone and
+  // reveals on scroll (RevealTurn / DeltaSection), not on a timer.
   const [shown, setShown] = useState(0);
   const [typing, setTyping] = useState<{ i: number; text: string } | null>(null);
-  const [finished, setFinished] = useState(false);
+  const [openingDone, setOpeningDone] = useState(false);
+  // revealAll forces the body + delta visible without scrolling — set by "Show it
+  // all" and by reduced-motion (which also skips the opening typing).
+  const [revealAll, setRevealAll] = useState(false);
 
   const cancelled = useRef(false);
-  const follow = useRef(true);
   const timers = useRef<number[]>([]);
-  const endRef = useRef<HTMLDivElement>(null);
 
-  const scrollFollow = useCallback(() => {
-    if (follow.current) endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, []);
-
+  // Typing is the opening signature only — the headline + the first "someone's
+  // talking to you" line. The app never scrolls; below the opening, content reveals
+  // (fade/rise) as it enters the viewport. "Show it all" skips the opening typing
+  // AND reveals everything at once.
   const showAll = useCallback(() => {
     cancelled.current = true;
     timers.current.forEach((t) => clearTimeout(t));
     setTyping(null);
     setPhase("flow");
-    setShown(script.length);
-    setFinished(true);
-  }, [script.length]);
-
-  // Corrected manual-scroll (FLAG-48, overrides the file's unconditional
-  // auto-scroll): auto-follow until the user scrolls UP via wheel / keyboard /
-  // touch — then OFF for good. No jump, no near-bottom resume.
-  useEffect(() => {
-    const stop = () => {
-      follow.current = false;
-    };
-    const onWheel = (e: WheelEvent) => {
-      if (e.deltaY < 0) stop();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowUp" || e.key === "PageUp" || e.key === "Home") stop();
-    };
-    let ty = 0;
-    const onTS = (e: TouchEvent) => {
-      ty = e.touches[0]?.clientY ?? 0;
-    };
-    const onTM = (e: TouchEvent) => {
-      if ((e.touches[0]?.clientY ?? 0) > ty + 4) stop();
-    };
-    window.addEventListener("wheel", onWheel, { passive: true });
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("touchstart", onTS, { passive: true });
-    window.addEventListener("touchmove", onTM, { passive: true });
-    return () => {
-      window.removeEventListener("wheel", onWheel);
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("touchstart", onTS);
-      window.removeEventListener("touchmove", onTM);
-    };
+    setShown(DELTA_AFTER);
+    setOpeningDone(true);
+    setRevealAll(true);
   }, []);
 
-  // The sequencer — same dwell/typing values as the reference file.
+  // The sequencer types ONLY the opening turns (indices 0..DELTA_AFTER-1), then
+  // hands off: the rest is rendered and revealed on scroll. Same typing dwell values
+  // as the reference file.
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       showAll();
@@ -2704,7 +2794,7 @@ function FriendRead({
       await wait(FRIEND.THINK);
       if (cancelled.current) return;
       setPhase("flow");
-      for (let i = 0; i < script.length; i++) {
+      for (let i = 0; i < Math.min(DELTA_AFTER, script.length); i++) {
         if (cancelled.current) return;
         const item = script[i];
         if (item.t === "type") {
@@ -2712,24 +2802,22 @@ function FriendRead({
           if (cancelled.current) return;
           let acc = "";
           setTyping({ i, text: "" });
-          scrollFollow();
           for (const ch of item.text) {
             if (cancelled.current) return;
             acc += ch;
             setTyping({ i, text: acc });
-            scrollFollow();
             await wait(ch === " " ? FRIEND.SPACE : FRIEND_PUNCT.test(ch) ? FRIEND.PUNCT : FRIEND.TYPE_PER);
           }
           setTyping(null);
           setShown(i + 1);
           await wait(FRIEND.TYPE_POST);
         } else {
+          // The opening is always typed turns; this is a defensive fallthrough.
           setShown(i + 1);
-          scrollFollow();
-          await wait(item.t === "pop" ? FRIEND.POP : FRIEND.REVEAL);
+          await wait(FRIEND.POP);
         }
       }
-      if (!cancelled.current) setFinished(true);
+      if (!cancelled.current) setOpeningDone(true);
     })();
     return () => {
       cancelled.current = true;
@@ -2753,35 +2841,61 @@ function FriendRead({
         </div>
       ) : (
         <div className={styles.friendFlow}>
-          {script.slice(0, shown).map((item, i) => (
+          {/* OPENING (typed): script[0] = headline/verdict, script[1] = the "someone's
+              talking to you" line. The only letter-by-letter turns — the signature
+              opening beat. */}
+          {script.slice(0, Math.min(shown, DELTA_AFTER)).map((item, i) => (
             <FriendTurn key={i} item={item} />
           ))}
           {typingItem && typingItem.t === "type" && (
             <div className={styles.friendTurn}>
               <p
-                className={`${styles.friendSay} ${typingItem.cls === "accent" ? styles.friendAccent : styles.friendBig} ${styles.friendCaret}`}
+                className={`${
+                  typingItem.cls === "small"
+                    ? styles.friendSmall
+                    : `${styles.friendSay} ${typingItem.cls === "accent" ? styles.friendAccent : styles.friendBig}`
+                } ${styles.friendCaret}`}
               >
                 {typing!.text}
               </p>
             </div>
           )}
-          {/* Cross-device verify offer: the closing line after the whole report,
-              non-sticky. */}
-          {finished && (
-            <p className={`${styles.friendFine} ${styles.friendSaved}`}>
-              <Link href="/signin" style={{ color: "var(--f-accent)" }}>
-                Want your reads on any device? Verify your email &rarr;
-              </Link>
-            </p>
+          {/* Everything below the opening renders at once (openingDone) and reveals on
+              SCROLL — no typing past the opening. */}
+          {openingDone && (
+            <>
+              {/* FLAG-46 directional "Since last time": on a continuation, "what
+                  changed" is what the returning user most wants, so it sits HIGH —
+                  right under the opening, above the body. Reveals when visible (its own
+                  IntersectionObserver fires on mount for an in-view element, on scroll
+                  otherwise). */}
+              {delta && delta.length > 0 && (
+                <DeltaSection changes={delta} revealAll={revealAll} />
+              )}
+              {/* The read body (bars, cards, where-this-leaves-you, move) — each fades/
+                  rises in as it enters the viewport, no typing. */}
+              {script.slice(DELTA_AFTER).map((item, i) => (
+                <RevealTurn key={i + DELTA_AFTER} revealAll={revealAll}>
+                  <FriendTurn item={item} />
+                </RevealTurn>
+              ))}
+              {/* Cross-device verify offer: the closing line, revealed as you reach it. */}
+              <RevealTurn revealAll={revealAll}>
+                <p className={`${styles.friendFine} ${styles.friendSaved}`}>
+                  <Link href="/signin" style={{ color: "var(--f-accent)" }}>
+                    Want your reads on any device? Verify your email &rarr;
+                  </Link>
+                </p>
+              </RevealTurn>
+            </>
           )}
-          <div ref={endRef} />
         </div>
       )}
-      {/* FLAG-48 sticky actions: reachable while scrolling, shown once the unfold
-          finishes (so it doesn't compete with the typing). Sticky-bottom as the
-          last in-flow child — self-clearing, no content hidden behind it; safe-area
-          padding handles the iPhone home bar. */}
-      {finished && (
+      {/* FLAG-48 sticky actions: reachable while scrolling, shown once the opening
+          finishes (so they don't compete with the typing). Sticky-bottom as the last
+          in-flow child — self-clearing, no content hidden behind it; safe-area padding
+          handles the iPhone home bar. */}
+      {openingDone && (
         <div className={styles.friendActions}>
           {/* Only show "Help me reply" when the conversation is actually in hand —
               never a visible-but-dead button. */}
@@ -2798,7 +2912,7 @@ function FriendRead({
           </Link>
         </div>
       )}
-      {!finished && (
+      {!openingDone && (
         <button className={styles.friendSkip} onClick={showAll}>
           Show it all
         </button>
@@ -2807,13 +2921,159 @@ function FriendRead({
   );
 }
 
+const DIR_META: Record<DeltaChange["direction"], { arrow: string; label: string }> = {
+  weakened: { arrow: "↓", label: "Weakened" },
+  improved: { arrow: "↑", label: "Improved" },
+  held: { arrow: "→", label: "Held" },
+};
+
+/**
+ * FLAG-46 directional "Since last time" — ported from directional-animated.html.
+ * Sits HIGH on a continuation — right under the headline/subhead, above the read
+ * body — so the returning user sees "what changed" first. Reveals when VISIBLE: each
+ * dimension fades/rises in via an IntersectionObserver, which fires on mount for an
+ * element already in view (near the top, it's in view on load) and on scroll
+ * otherwise. At reveal its pill springs + arrow starts drifting (down=weakened,
+ * up=improved; held = no drift) + spine draws + "now" emphasises. Reveal-once.
+ * Direction only — never a score number (sub-scores are unstable, FLAG-49). No
+ * app-driven scrolling — the user's scroll paces it, which removes the sync problem.
+ */
+function DeltaSection({ changes, revealAll }: { changes: DeltaChange[]; revealAll: boolean }) {
+  const reduce =
+    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // reveal-once per dimension; reduced-motion / "Show it all" → all revealed at once.
+  const [revealed, setRevealed] = useState<boolean[]>(() => changes.map(() => reduce || revealAll));
+  const dimRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  useEffect(() => {
+    if (revealAll) {
+      setRevealed(changes.map(() => true));
+      return;
+    }
+    if (reduce) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          const idx = Number((e.target as HTMLElement).dataset.idx);
+          setRevealed((r) => {
+            if (r[idx]) return r;
+            const next = [...r];
+            next[idx] = true;
+            return next;
+          });
+          io.unobserve(e.target); // reveal-once: stays revealed if they scroll back up
+        }
+      },
+      { threshold: 0.4, rootMargin: "0px 0px -12% 0px" },
+    );
+    dimRefs.current.forEach((el) => el && io.observe(el));
+    return () => io.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealAll]);
+
+  return (
+    <div className={styles.friendTurn}>
+      <div className={styles.deltaCard}>
+        <div className={styles.friendTiny}>Since last time</div>
+        {changes.map((c, i) => {
+          const meta = DIR_META[c.direction];
+          const spineCls =
+            c.direction === "improved"
+              ? styles.improvedSpine
+              : c.direction === "held"
+                ? styles.heldSpine
+                : "";
+          return (
+            <div
+              key={i}
+              data-idx={i}
+              ref={(el) => {
+                dimRefs.current[i] = el;
+              }}
+              // .go gates every animation (pill, arrow drift, spine, legs) and is now
+              // added when the dimension SCROLLS into view (IntersectionObserver),
+              // reveal-once. The drift selector is `.dim.go .dir.<direction> .arrow` —
+              // go on THIS div, direction on the pill, arrow on the inner span.
+              className={`${styles.dim} ${revealed[i] ? styles.go : ""}`}
+            >
+              <div className={styles.dimHead}>
+                <span className={styles.dimName}>{c.dimension}</span>
+                <span className={`${styles.dir} ${styles[c.direction]}`}>
+                  <span className={styles.arrow}>{meta.arrow}</span> {meta.label}
+                </span>
+              </div>
+              <div className={styles.pair}>
+                <div className={`${styles.spine} ${spineCls}`} />
+                <div className={`${styles.leg} ${styles.before}`}>
+                  <div className={styles.legLabel}>Before</div>
+                  <div className={styles.legText}>{c.before}</div>
+                </div>
+                <div className={styles.arrowDown}>↓</div>
+                <div className={`${styles.leg} ${styles.now}`}>
+                  <div className={styles.legLabel}>Now</div>
+                  <div className={styles.legText}>{c.now}</div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        <p className={styles.deltaNote}>
+          Direction shows which way the behaviour moved &mdash; not a precise score. Read from the
+          new messages you added.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Reveal-on-scroll wrapper for everything below the opening (FLAG: typing is the
+ * opening flourish only). The child fades/rises in when it enters the viewport via
+ * an IntersectionObserver (reveal-once). `revealAll` ("Show it all" / reduced-motion)
+ * shows it immediately without needing a scroll. No typing — just the reveal.
+ */
+function RevealTurn({ children, revealAll }: { children: ReactNode; revealAll: boolean }) {
+  const [revealed, setRevealed] = useState(revealAll);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (revealAll) {
+      setRevealed(true);
+      return;
+    }
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          setRevealed(true);
+          io.unobserve(e.target); // reveal-once
+        }
+      },
+      { threshold: 0.15, rootMargin: "0px 0px -8% 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [revealAll]);
+
+  return (
+    <div ref={ref} className={`${styles.revealTurn} ${revealed ? styles.revealShown : ""}`}>
+      {children}
+    </div>
+  );
+}
+
 function FriendTurn({ item }: { item: FriendItem }) {
   if (item.t === "type") {
+    const cls =
+      item.cls === "small"
+        ? styles.friendSmall
+        : `${styles.friendSay} ${item.cls === "accent" ? styles.friendAccent : styles.friendBig}`;
     return (
       <div className={styles.friendTurn}>
-        <p className={`${styles.friendSay} ${item.cls === "accent" ? styles.friendAccent : styles.friendBig}`}>
-          {item.text}
-        </p>
+        <p className={cls}>{item.text}</p>
       </div>
     );
   }
@@ -2854,31 +3114,6 @@ function FriendTurn({ item }: { item: FriendItem }) {
           <div className={styles.friendTiny}>{item.card.kind}</div>
           <h3 className={styles.friendCardTitle}>{item.card.title}</h3>
           <p>{item.card.body}</p>
-        </div>
-      </div>
-    );
-  }
-  if (item.t === "delta") {
-    // FLAG-46: concrete before → now contrast, paired so the change is obvious at
-    // a glance. Each side is a specific observed behaviour; the user draws the
-    // conclusion. (Only shown when there's a real change — never a vague "shifted".)
-    return (
-      <div className={styles.friendTurn}>
-        <div className={styles.deltaCard}>
-          <div className={styles.friendTiny}>Since last time</div>
-          {item.changes.map((c, i) => (
-            <div key={i} className={styles.deltaRow}>
-              <div className={styles.deltaCell}>
-                <span className={styles.deltaLabel}>Before</span>
-                <span>{c.before}</span>
-              </div>
-              <div className={styles.deltaArrow} aria-hidden="true">↓</div>
-              <div className={`${styles.deltaCell} ${styles.deltaCellNow}`}>
-                <span className={styles.deltaLabel}>Now</span>
-                <span>{c.now}</span>
-              </div>
-            </div>
-          ))}
         </div>
       </div>
     );
