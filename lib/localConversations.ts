@@ -69,6 +69,23 @@ function deleteKeys(db: IDBDatabase, reportIds: string[]): Promise<void> {
   });
 }
 
+/**
+ * Write a record and await the TRANSACTION's commit (oncomplete) — NOT just the
+ * PUT request's onsuccess. A request succeeds before its transaction commits, so
+ * resolving on onsuccess can lose the write if the page reloads/navigates before
+ * the commit flushes (relaxed durability). `durability: "strict"` forces the flush.
+ * This is the same oncomplete-awaiting pattern deleteKeys already uses.
+ */
+function putDurable(db: IDBDatabase, record: LocalConversation): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite", { durability: "strict" });
+    tx.objectStore(STORE).put(record);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
 /** Remove conversations older than the TTL. Safe to call anytime. */
 export async function evictExpired(): Promise<void> {
   if (!hasIDB()) return;
@@ -100,7 +117,7 @@ export async function saveConversation(c: {
   try {
     const db = await openDB();
     const record: LocalConversation = { ...c, createdAt: Date.now() };
-    await reqP(db.transaction(STORE, "readwrite").objectStore(STORE).put(record));
+    await putDurable(db, record); // await the COMMIT, not just the request's onsuccess
     await evictExpired();
     await enforceCap(db, c.personId);
   } catch {
