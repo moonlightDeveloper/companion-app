@@ -15,7 +15,7 @@ import type { Read, ReadBar, ReadCard } from "@/types";
  * bits → pop.
  */
 export type FriendItem =
-  | { t: "type"; cls: "big" | "accent"; text: string }
+  | { t: "type"; cls: "big" | "accent" | "small"; text: string }
   | { t: "pop"; cls: "small" | "soft"; text: string }
   | { t: "bar"; bar: ReadBar }
   | { t: "card"; card: ReadCard }
@@ -37,8 +37,12 @@ export function toScript(
 ): FriendItem[] {
   const items: FriendItem[] = [];
 
+  // The opening beat (headline + this "someone's talking to you" line) both TYPE
+  // letter-by-letter — the deliberate "someone is writing this to you" gesture.
+  // Everything after reveals plainly (fade/rise on scroll), no typing — see
+  // FriendRead. These two are the only typed turns at the top (index 0, 1).
   items.push({ t: "type", cls: "big", text: read.headline });
-  items.push({ t: "pop", cls: "small", text: DISCLAIMER });
+  items.push({ t: "type", cls: "small", text: DISCLAIMER });
   // FLAG-46 Bug 2: an identical re-send (same chat, no new messages) shows the
   // "nothing new" note here in the auto-reveal. The directional "Since last time"
   // section for a genuine continuation is NOT a script item — it renders below the

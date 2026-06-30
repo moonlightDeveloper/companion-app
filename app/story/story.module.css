@@ -312,6 +312,78 @@
   font-size: 22px;
   color: var(--accent);
 }
+/* Per-person roster row: the pick button + a delete affordance beside it. */
+.optionRow {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.optionRow .option {
+  flex: 1;
+  min-width: 0;
+}
+.deleteBtn {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 18px;
+  padding: 0 14px;
+  cursor: pointer;
+  color: var(--muted);
+  transition: 0.16s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.deleteBtn:hover {
+  border-color: #dfb8ac;
+  color: #c0392b;
+}
+/* Inline confirm replacing the row — destructive, so it asks first. */
+.confirmRow {
+  border: 1px solid #e6c3ba;
+  background: #fdf6f4;
+  border-radius: 18px;
+  padding: 15px 16px;
+}
+.confirmText {
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+}
+.confirmError {
+  color: #c0392b;
+  font-size: 13px;
+  margin: 8px 0 0;
+}
+.confirmActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.confirmCancel,
+.confirmDelete {
+  border-radius: 999px;
+  padding: 9px 18px;
+  font-weight: 760;
+  cursor: pointer;
+  transition: 0.16s ease;
+}
+.confirmCancel {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+}
+.confirmDelete {
+  border: 1px solid #c0392b;
+  background: #c0392b;
+  color: #fff;
+}
+.confirmDelete:disabled,
+.confirmCancel:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 /* FLAG-32: WhatsApp import — platform toggle + export steps. */
 .waToggle {
   display: flex;
@@ -954,6 +1026,15 @@
   font-family: var(--font-inter), sans-serif;
   z-index: 10;
 }
+/* Reveal-on-scroll wrapper for everything below the opening: hidden until it enters
+   the viewport, then fades/rises in (RevealTurn adds .revealShown). No typing. */
+.revealTurn {
+  opacity: 0;
+  transform: translateY(12px);
+}
+.revealTurn.revealShown {
+  animation: friendRise 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+}
 @keyframes friendRise {
   to {
     opacity: 1;
@@ -977,7 +1058,8 @@
   .friendMove,
   .friendActions,
   .deltaCard,
-  .friendFill {
+  .friendFill,
+  .revealTurn {
     animation-duration: 0.01ms !important;
     opacity: 1 !important;
     transform: none !important;

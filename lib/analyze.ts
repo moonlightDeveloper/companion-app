@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type {
   BarTone,
   CardKind,
+  DeltaChange,
   Intake,
   Read,
   ReadBar,
@@ -107,6 +108,13 @@ function shapeGuard(raw: unknown): Read {
     ? obj.cards.map(guardCard).slice(0, 3)
     : [];
 
+  // FLAG-46: the model never emits `delta` — it's attached at save time on a
+  // continuation (the persisted "Since last time"). Preserve it through the guard
+  // so a recalled report shows the same before/after; absent/invalid → omitted.
+  const delta = Array.isArray(obj.delta)
+    ? obj.delta.map(guardDelta).filter((d): d is DeltaChange => d !== null)
+    : [];
+
   return {
     headline: asString(obj.headline, "Here's what I'm noticing"),
     status_tag: asString(obj.status_tag, "Your read"),
@@ -118,7 +126,19 @@ function shapeGuard(raw: unknown): Read {
       flag: safetyFlag,
       note: typeof safetyRaw.note === "string" ? safetyRaw.note : null,
     },
+    ...(delta.length > 0 ? { delta } : {}),
   };
+}
+
+/** One persisted before/after change; null if it's missing required fields or an
+ *  invalid direction (dropped — never a half-rendered comparison). */
+function guardDelta(raw: unknown): DeltaChange | null {
+  const d = isRecord(raw) ? raw : {};
+  const dir = d.direction;
+  if (dir !== "weakened" && dir !== "improved" && dir !== "held") return null;
+  if (typeof d.dimension !== "string" || typeof d.before !== "string" || typeof d.now !== "string")
+    return null;
+  return { dimension: d.dimension, direction: dir, before: d.before, now: d.now };
 }
 
 function guardBar(raw: unknown): ReadBar {

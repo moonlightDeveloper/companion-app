@@ -42,6 +42,11 @@ export interface Read {
   /** Grounding note; if healthy, says they can relax. */
   where_this_leaves_you: string;
   safety: ReadSafety;
+  /** FLAG-46: the "Since last time" before/after, PERSISTED with the report when it
+   *  was created on a continuation, so recalling the report shows the same comparison
+   *  it had originally. Absent on first reads / fresh reads (nothing to compare). Not
+   *  emitted by the model — attached at save time from the /api/delta result. */
+  delta?: DeltaChange[];
 }
 
 /** One attributed line of a conversation extracted from screenshots. */
