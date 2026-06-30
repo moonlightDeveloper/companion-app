@@ -1371,3 +1371,202 @@
     height: calc(100% - 16px) !important;
   }
 }
+
+/* ---------- Movement over time (ported from movement-3.html) ----------
+   A flowing timeline of up to 3 recent reads (oldest top → newest bottom): the spine
+   draws through the nodes, a glow dot travels down, each read emerges in sequence,
+   older reads progressively muted, the newest pops full-ink. Scoped to .friendRoot
+   (uses the --f-* theme vars); mv-prefixed to avoid any class collision. Self-
+   animating on mount; .mvInstant (reduced-motion / "Show it all") forces it drawn. */
+.mvRoot {
+  margin-bottom: 8px;
+}
+.mvDeck {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--f-accent);
+  margin-bottom: 16px;
+  opacity: 0;
+  animation: mvFade 0.6s ease 0.35s forwards;
+}
+.mvFlowwrap {
+  position: relative;
+  padding-left: 34px;
+}
+.mvFlowline {
+  position: absolute;
+  left: 9px;
+  top: 14px;
+  width: 3px;
+  border-radius: 3px;
+  height: 0;
+  background: linear-gradient(var(--f-muted), var(--f-accent));
+  animation: mvDrawFlow 2.4s cubic-bezier(0.4, 0, 0.2, 1) 1s forwards;
+}
+.mvFlowdot {
+  position: absolute;
+  left: 5.5px;
+  top: 14px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--f-accent);
+  opacity: 0;
+  animation: mvTravel 2.4s cubic-bezier(0.4, 0, 0.2, 1) 1s forwards;
+  box-shadow: 0 0 12px rgba(188, 107, 58, 0.5);
+}
+.mvRead {
+  position: relative;
+  margin-bottom: 22px;
+  opacity: 0;
+}
+.mvR1 {
+  animation: mvSlideIn 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.5s forwards;
+}
+.mvR2 {
+  animation: mvEmerge 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) 1.5s forwards;
+}
+.mvR3 {
+  animation: mvEmerge 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) 2.7s forwards;
+}
+.mvNode {
+  position: absolute;
+  left: -34px;
+  top: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--f-bubble);
+  border: 3px solid var(--f-muted);
+  z-index: 2;
+}
+.mvR3 .mvNode {
+  border-color: var(--f-accent);
+  background: var(--f-accent);
+  animation: mvPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 3s both;
+  box-shadow: 0 0 0 5px rgba(188, 107, 58, 0.14);
+}
+.mvWhen {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 7px;
+  color: var(--f-muted);
+}
+.mvR3 .mvWhen {
+  color: var(--f-accent);
+}
+.mvCard {
+  background: var(--f-bubble);
+  border-radius: 18px;
+  padding: 17px 20px;
+  box-shadow: 0 1px 2px rgba(42, 35, 29, 0.04), 0 10px 26px rgba(42, 35, 29, 0.07);
+  border: 1px solid rgba(230, 220, 207, 0.7);
+}
+.mvR1 .mvCard {
+  background: linear-gradient(0deg, rgba(154, 142, 129, 0.07), rgba(154, 142, 129, 0.07));
+  opacity: 0.85;
+}
+.mvR2 .mvCard {
+  background: linear-gradient(0deg, rgba(154, 142, 129, 0.04), rgba(154, 142, 129, 0.04));
+}
+.mvHeadline {
+  font-family: var(--font-newsreader), serif;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.22;
+  letter-spacing: -0.01em;
+  margin-bottom: 8px;
+  color: var(--f-muted);
+}
+.mvR3 .mvHeadline {
+  color: var(--f-ink);
+}
+.mvTake {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--f-muted);
+}
+.mvR3 .mvTake {
+  color: var(--f-ink-soft);
+}
+.mvFooter {
+  font-size: 12px;
+  color: var(--f-muted);
+  margin: 6px 0 0;
+  line-height: 1.5;
+  font-style: italic;
+  opacity: 0;
+  animation: mvFade 0.7s ease 3.4s forwards;
+}
+
+@keyframes mvFade {
+  to { opacity: 1; }
+}
+@keyframes mvDrawFlow {
+  to { height: calc(100% - 40px); }
+}
+@keyframes mvTravel {
+  0% { opacity: 1; top: 14px; }
+  88% { opacity: 1; }
+  100% { opacity: 0; top: calc(100% - 30px); }
+}
+@keyframes mvSlideIn {
+  from { opacity: 0; transform: translateX(-24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes mvEmerge {
+  0% { opacity: 0; transform: translateY(22px) scale(0.96); }
+  60% { opacity: 1; transform: translateY(-3px) scale(1.01); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes mvPop {
+  0% { transform: scale(0.7); }
+  60% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+/* Instant: reduced-motion OR "Show it all" — fully drawn, no animation, dot hidden. */
+.mvInstant .mvDeck,
+.mvInstant .mvRead,
+.mvInstant .mvFooter,
+.mvInstant .mvR3 .mvNode {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+.mvInstant .mvFlowline {
+  animation: none !important;
+  height: calc(100% - 40px);
+}
+.mvInstant .mvFlowdot {
+  animation: none !important;
+  opacity: 0 !important;
+}
+.mvInstant .mvR1 .mvCard {
+  opacity: 0.85;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mvDeck,
+  .mvRead,
+  .mvFooter,
+  .mvR3 .mvNode {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .mvFlowline {
+    animation: none !important;
+    height: calc(100% - 40px);
+  }
+  .mvFlowdot {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+  .mvR1 .mvCard {
+    opacity: 0.85;
+  }
+}

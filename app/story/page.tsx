@@ -20,7 +20,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { Intake, Read, ReplyDraft, TranscriptMessage, DeltaChange } from "@/types";
+import type { Intake, Read, ReplyDraft, TranscriptMessage, DeltaChange, MovementNode } from "@/types";
 import { saveConversation, evictExpired, getConversation, getRecentConversations, deletePersonConversations, pruneOrphanConversations } from "@/lib/localConversations";
 import { detectContinuation } from "@/lib/continuation";
 import { MAX_IMAGES } from "@/lib/cap";
@@ -196,6 +196,8 @@ export default function Story() {
   const nothingNewRef = useRef(false);
   const [delta, setDelta] = useState<DeltaChange[] | null>(null);
   const [nothingNew, setNothingNew] = useState(false);
+  // Movement-over-time: a different conversation with a person who has prior read(s).
+  const [movement, setMovement] = useState<MovementNode[] | null>(null);
   // FLAG-36: mirror of fromPerson, readable inside the []-dep startBgRead.
   const fromPersonRef = useRef(false);
   useEffect(() => {
@@ -402,6 +404,16 @@ export default function Story() {
       // Only a REAL set of concrete changes; empty → no before/after shown.
       setDelta(deltaChanges.length > 0 ? deltaChanges : null);
       setNothingNew(nothingNewRef.current);
+      // Movement over time: a DIFFERENT conversation with the same person who has
+      // prior read(s) — NOT a continuation, NOT a re-send. Replays the saved reads as
+      // a timeline. Mutually exclusive with the directional delta / nothing-new.
+      const showMovement =
+        fromPersonRef.current &&
+        !continuationRef.current &&
+        !nothingNewRef.current &&
+        personReports.length > 0;
+      const movementNodes = showMovement ? buildMovement(read, personReports) : null;
+      setMovement(movementNodes);
 
       setRead(read);
       // FLAG-43: was the read generated from a windowed (capped) conversation?
@@ -415,10 +427,15 @@ export default function Story() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          // FLAG-46: persist the before/after WITH the report on a continuation, so
-          // recalling it shows the same "Since last time" it had originally. Absent
-          // on a fresh read → nothing attached → no section on recall.
-          read: deltaChanges.length > 0 ? { ...read, delta: deltaChanges } : read,
+          // FLAG-46/FLAG-53: persist the high-slot comparison WITH the report so
+          // recall shows the same snapshot it had at creation — the directional
+          // before/after on a continuation, OR the movement timeline on a different-
+          // conversation re-read (mutually exclusive). Absent on a plain first read.
+          read: {
+            ...read,
+            ...(deltaChanges.length > 0 ? { delta: deltaChanges } : {}),
+            ...(movementNodes && movementNodes.length >= 2 ? { movement: movementNodes } : {}),
+          },
           name: answers.name,
           email,
           consent,
@@ -446,7 +463,7 @@ export default function Story() {
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setStatus("error");
     }
-  }, [answers, email, consent, personId, clarifyQs, clarifyAns]);
+  }, [answers, email, consent, personId, clarifyQs, clarifyAns, personReports]);
 
   // Kick off the read when we land on the read screen.
   useEffect(() => {
@@ -917,6 +934,7 @@ export default function Story() {
               trimmed={readTrimmed}
               delta={delta}
               nothingNew={nothingNew}
+              movement={movement}
               conversation={answers.conversation}
               canFix={regenCount < 2}
               onFix={(text) => {
@@ -2531,11 +2549,23 @@ function ReportScreen({
               .friendRoot wrapper scopes the directional card's theme vars (they don't
               leak into the rest of the report). revealAll → shown at once (this is a
               static recall, not the friend-talking reveal). */}
-          {read.delta && read.delta.length > 0 && (
+          {read.delta && read.delta.length > 0 ? (
             <div className={styles.friendRoot}>
               <DeltaSection changes={read.delta} revealAll={true} />
             </div>
-          )}
+          ) : read.movement && read.movement.length >= 2 ? (
+            // FLAG-53: the persisted movement-over-time timeline, replayed from the
+            // saved snapshot (not regenerated). Animates on open, but never auto-scrolls
+            // (recall is a static review screen).
+            <div className={styles.friendRoot}>
+              <MovementSection
+                nodes={read.movement}
+                nickname={nickname}
+                revealAll={false}
+                autoScroll={false}
+              />
+            </div>
+          ) : null}
           <ReadBody read={read} />
           {canReply && conversation && conversation.trim() && (
             <ReplyHelper name={nickname} conversation={conversation} />
@@ -2554,6 +2584,7 @@ function ReadScreen({
   trimmed,
   delta,
   nothingNew,
+  movement,
   conversation,
   canFix,
   onFix,
@@ -2567,6 +2598,7 @@ function ReadScreen({
   trimmed: boolean;
   delta: DeltaChange[] | null;
   nothingNew: boolean;
+  movement: MovementNode[] | null;
   conversation: string;
   canFix: boolean;
   onFix: (text: string) => void;
@@ -2653,6 +2685,8 @@ function ReadScreen({
         trimmed={trimmed}
         delta={delta}
         nothingNew={nothingNew}
+        movement={movement}
+        nickname={name}
         canReply={!!conversation.trim()}
         onReply={onReply}
       />
@@ -2734,6 +2768,8 @@ function FriendRead({
   trimmed,
   delta,
   nothingNew,
+  movement,
+  nickname,
   canReply,
   onReply,
 }: {
@@ -2741,6 +2777,8 @@ function FriendRead({
   trimmed: boolean;
   delta: DeltaChange[] | null;
   nothingNew: boolean;
+  movement: MovementNode[] | null;
+  nickname: string;
   canReply: boolean;
   onReply: () => void;
 }) {
@@ -2864,14 +2902,20 @@ function FriendRead({
               SCROLL — no typing past the opening. */}
           {openingDone && (
             <>
-              {/* FLAG-46 directional "Since last time": on a continuation, "what
-                  changed" is what the returning user most wants, so it sits HIGH —
-                  right under the opening, above the body. Reveals when visible (its own
-                  IntersectionObserver fires on mount for an in-view element, on scroll
-                  otherwise). */}
-              {delta && delta.length > 0 && (
+              {/* High slot, MUTUALLY EXCLUSIVE: a continuation shows the directional
+                  "Since last time" (what changed); a different-conversation re-read of
+                  a person with prior reads shows the movement-over-time timeline.
+                  Either sits right under the opening, above the body. */}
+              {delta && delta.length > 0 ? (
                 <DeltaSection changes={delta} revealAll={revealAll} />
-              )}
+              ) : movement && movement.length >= 2 ? (
+                <MovementSection
+                  nodes={movement}
+                  nickname={nickname}
+                  revealAll={revealAll}
+                  autoScroll={true}
+                />
+              ) : null}
               {/* The read body (bars, cards, where-this-leaves-you, move) — each fades/
                   rises in as it enters the viewport, no typing. */}
               {script.slice(DELTA_AFTER).map((item, i) => (
@@ -3023,6 +3067,142 @@ function DeltaSection({ changes, revealAll }: { changes: DeltaChange[]; revealAl
           new messages you added.
         </p>
       </div>
+    </div>
+  );
+}
+
+/** A short relative-time label for a saved read, e.g. "3 days ago", "2 weeks ago". */
+function relativeWhen(iso: string): string {
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days} days ago`;
+  if (days < 30) {
+    const w = Math.floor(days / 7);
+    return w === 1 ? "1 week ago" : `${w} weeks ago`;
+  }
+  const m = Math.floor(days / 30);
+  return m === 1 ? "1 month ago" : `${m} months ago`;
+}
+
+/** The read's one-line takeaway — the first sentence of its grounding note (faithful
+ *  to the saved report; never fabricated). Falls back to the lead card / status tag. */
+function takeawayOf(read: Read): string {
+  const s = (read.where_this_leaves_you || "").trim();
+  if (s) {
+    const m = s.match(/^(.*?[.!?])(\s|$)/);
+    return m ? m[1] : s;
+  }
+  return (read.cards[0]?.body || "").trim() || read.status_tag || "";
+}
+
+/**
+ * Build the movement-over-time timeline: the current read + prior saved reads, the
+ * 3 MOST RECENT only (aligns with the 3-most-recent storage window), oldest→newest.
+ * Replay — pulled from the saved reports, never regenerated. "· first read" marks the
+ * oldest shown ONLY when it's genuinely the person's first (≤3 reads total).
+ */
+function buildMovement(current: Read, priors: ClientReport[]): MovementNode[] {
+  const all = [
+    { read: current, created_at: new Date().toISOString(), isNow: true },
+    ...priors.map((p) => ({ read: p.result, created_at: p.created_at, isNow: false })),
+  ];
+  const total = all.length;
+  const display = all.slice(0, 3).reverse(); // 3 most recent, oldest → newest
+  return display.map((n, i) => ({
+    headline: n.read.headline,
+    take: takeawayOf(n.read),
+    when: n.isNow
+      ? "Now · this read"
+      : relativeWhen(n.created_at) + (i === 0 && total <= 3 ? " · first read" : ""),
+    isNow: n.isNow,
+  }));
+}
+
+/**
+ * Movement over time — ported from movement-3.html. A flowing timeline of up to the
+ * 3 most recent reads of a person (oldest top → newest bottom): the spine draws
+ * through the nodes, a glow dot travels down, each read emerges in sequence, older
+ * reads progressively muted, the newest ("now") read pops full-ink. Self-animating on
+ * mount (scoped to .friendRoot for the --f-* theme vars). After the entrance, scroll
+ * the "now" read into view ONCE — only if it's off-screen and the user hasn't scrolled.
+ * `revealAll` / reduced-motion → instant, fully drawn, no animation, no auto-scroll.
+ */
+function MovementSection({
+  nodes,
+  nickname,
+  revealAll,
+  autoScroll,
+}: {
+  nodes: MovementNode[];
+  nickname: string;
+  revealAll: boolean;
+  /** Live read → scroll the "now" read into view after the entrance; recall → false. */
+  autoScroll: boolean;
+}) {
+  const reduce =
+    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const instant = reduce || revealAll;
+  const nowRef = useRef<HTMLDivElement | null>(null);
+  const userScrolled = useRef(false);
+
+  useEffect(() => {
+    if (instant || !autoScroll) return; // no auto-scroll on recall / reduced-motion / show-all
+    const onUser = () => {
+      userScrolled.current = true;
+    };
+    window.addEventListener("wheel", onUser, { passive: true });
+    window.addEventListener("touchmove", onUser, { passive: true });
+    window.addEventListener("keydown", onUser);
+    // After the entrance completes, bring the "now" read into view — ONCE, and only
+    // if it's off-screen and the user hasn't taken over scrolling.
+    const t = window.setTimeout(() => {
+      const el = nowRef.current;
+      if (userScrolled.current || !el) return;
+      const r = el.getBoundingClientRect();
+      const visible = r.top >= 0 && r.bottom <= window.innerHeight;
+      if (!visible) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 3600);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("wheel", onUser);
+      window.removeEventListener("touchmove", onUser);
+      window.removeEventListener("keydown", onUser);
+    };
+  }, [instant, autoScroll]);
+
+  const n = nodes.length;
+  // Newest is always r3 (full ink, accent node, pop); oldest is r1 (faintest); a
+  // middle node (only when 3) is r2. Matches the design's progressive muting.
+  const slot = (i: number) => (i === n - 1 ? styles.mvR3 : i === 0 ? styles.mvR1 : styles.mvR2);
+
+  return (
+    <div className={`${styles.mvRoot} ${instant ? styles.mvInstant : ""}`}>
+      <div className={styles.mvDeck}>
+        Across your last {n} reads of {nickname}
+      </div>
+      <div className={styles.mvFlowwrap}>
+        <div className={styles.mvFlowline} />
+        <div className={styles.mvFlowdot} />
+        {nodes.map((nd, i) => (
+          <div
+            key={i}
+            className={`${styles.mvRead} ${slot(i)}`}
+            ref={nd.isNow ? nowRef : undefined}
+          >
+            <span className={styles.mvNode} />
+            <div className={styles.mvWhen}>{nd.when}</div>
+            <div className={styles.mvCard}>
+              <div className={styles.mvHeadline}>{nd.headline}</div>
+              <div className={styles.mvTake}>{nd.take}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className={styles.mvFooter}>
+        Your last {n} conversations with {nickname}, in order &mdash; separate chats, so read how
+        they sit together for yourself.
+      </p>
     </div>
   );
 }

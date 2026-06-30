@@ -47,6 +47,22 @@ export interface Read {
    *  it had originally. Absent on first reads / fresh reads (nothing to compare). Not
    *  emitted by the model — attached at save time from the /api/delta result. */
   delta?: DeltaChange[];
+  /** FLAG-53: the movement-over-time timeline (up to 3 reads), PERSISTED with the
+   *  report when it was created on a different-conversation re-read, so recall shows
+   *  the same snapshot. Frozen as-shown (incl. the "when" labels). Not model-emitted —
+   *  attached at save time. */
+  movement?: MovementNode[];
+}
+
+/** FLAG-53: one node on the movement-over-time timeline — a saved read replayed as a
+ *  point on the flowing timeline (headline + one-line takeaway + a frozen "when"). */
+export interface MovementNode {
+  headline: string;
+  take: string;
+  /** Frozen relative label as shown at creation, e.g. "3 days ago", "Now · this read". */
+  when: string;
+  /** True for the read this report IS (the newest / "now" node). */
+  isNow: boolean;
 }
 
 /** One attributed line of a conversation extracted from screenshots. */

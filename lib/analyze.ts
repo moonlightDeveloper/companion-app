@@ -4,6 +4,7 @@ import type {
   CardKind,
   DeltaChange,
   Intake,
+  MovementNode,
   Read,
   ReadBar,
   ReadCard,
@@ -115,6 +116,12 @@ function shapeGuard(raw: unknown): Read {
     ? obj.delta.map(guardDelta).filter((d): d is DeltaChange => d !== null)
     : [];
 
+  // FLAG-53: same for the persisted movement-over-time timeline (a different-
+  // conversation re-read). Attached at save time; preserved here for faithful recall.
+  const movement = Array.isArray(obj.movement)
+    ? obj.movement.map(guardMovement).filter((m): m is MovementNode => m !== null)
+    : [];
+
   return {
     headline: asString(obj.headline, "Here's what I'm noticing"),
     status_tag: asString(obj.status_tag, "Your read"),
@@ -127,7 +134,16 @@ function shapeGuard(raw: unknown): Read {
       note: typeof safetyRaw.note === "string" ? safetyRaw.note : null,
     },
     ...(delta.length > 0 ? { delta } : {}),
+    ...(movement.length > 0 ? { movement } : {}),
   };
+}
+
+/** One persisted movement node; null if it's missing required fields (dropped). */
+function guardMovement(raw: unknown): MovementNode | null {
+  const m = isRecord(raw) ? raw : {};
+  if (typeof m.headline !== "string" || typeof m.take !== "string" || typeof m.when !== "string")
+    return null;
+  return { headline: m.headline, take: m.take, when: m.when, isNow: m.isNow === true };
 }
 
 /** One persisted before/after change; null if it's missing required fields or an
