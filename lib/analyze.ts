@@ -8,6 +8,8 @@ import type {
   Read,
   ReadBar,
   ReadCard,
+  ReadMoment,
+  ReadReceiptMsg,
 } from "@/types";
 import { SYSTEM_PROMPT, buildUserMessage, type Clarification } from "@/lib/prompt";
 import { modelFor, cachedSystem } from "./models";
@@ -36,7 +38,7 @@ export async function analyze(
   try {
     const response = await client.messages.create({
       model: modelFor("analyze"),
-      max_tokens: 2000,
+      max_tokens: 3000, // FLAG-54: headroom for receipts + inline quotes
       // FLAG-44: 0.3, not the default 1.0. The verdict is stable either way, but
       // 1.0 jitters the surface wording run-to-run (reads "unreliable"); 0.3 keeps
       // the read consistent without going fully deterministic.
@@ -65,7 +67,101 @@ export async function analyze(
   }
 
   const parsed = parseJson(text);
-  return shapeGuard(parsed);
+  // FLAG-54: enforce verbatim — validate every receipt bubble + inline «quote»
+  // against the REAL conversation; non-matches are dropped / de-quoted. Forged
+  // receipts are structurally impossible. Generation-time only (we have the
+  // conversation here); save-mode guardRead just preserves what was validated.
+  return verbatimize(shapeGuard(parsed), intake.conversation || "");
+}
+
+/** Normalize for the verbatim substring match: lowercase + collapse whitespace +
+ *  trim. NO punctuation/emoji stripping — those stay significant, so a typo-fix or
+ *  reworded phrase fails while a case/spacing slip on a real message still passes. */
+function vnorm(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/** The real conversation as messages: each line is "Speaker: text" — strip the
+ *  label to the bare text, and derive the side from the label ("You" → you). */
+function conversationMessages(conversation: string): { text: string; speaker: "you" | "them" }[] {
+  return conversation
+    .split("\n")
+    .map((line) => {
+      const m = line.match(/^\s*([^:\n]{1,40}):\s+(.*)$/);
+      if (!m) return null;
+      const speaker: "you" | "them" = /^you$/i.test(m[1].trim()) ? "you" : "them";
+      const text = m[2].trim();
+      return text ? { text, speaker } : null;
+    })
+    .filter((m): m is { text: string; speaker: "you" | "them" } => m !== null);
+}
+
+/** Find the real message that CONTAINS this candidate verbatim (normalized substring
+ *  of a single message). Returns the FULL real message + real side, or null. */
+function snapToReal(
+  candidate: string,
+  messages: { text: string; speaker: "you" | "them" }[],
+): { text: string; speaker: "you" | "them" } | null {
+  const nc = vnorm(candidate);
+  if (!nc) return null;
+  for (const m of messages) {
+    if (vnorm(m.text).includes(nc)) return m;
+  }
+  return null;
+}
+
+/** Replace «quotes» that aren't a verbatim substring of any real message with their
+ *  bare inner text (so a non-verbatim quote renders as plain prose, never a fake
+ *  quote). Valid «quotes» are kept for the renderer to style. */
+function validateQuotes(
+  text: string,
+  messages: { text: string; speaker: "you" | "them" }[],
+): string {
+  return text.replace(/«([^«»]*)»/g, (_full, inner: string) =>
+    snapToReal(inner, messages) ? `«${inner}»` : inner,
+  );
+}
+
+/** Drop forged receipts/quotes against the real conversation (see analyze). */
+function verbatimize(read: Read, conversation: string): Read {
+  const messages = conversationMessages(conversation);
+  if (messages.length === 0) {
+    // No conversation to validate against → strip ALL quote marks + drop receipts,
+    // rather than show unverifiable evidence.
+    return { ...read, receipts: [], ...stripAllQuotes(read) };
+  }
+
+  const receipts = (read.receipts ?? [])
+    .map((moment) => {
+      const snapped = moment.messages
+        .map((msg) => snapToReal(msg.text, messages))
+        .filter((m): m is { text: string; speaker: "you" | "them" } => m !== null);
+      return { ...moment, messages: snapped };
+    })
+    .filter((moment) => moment.messages.length > 0);
+
+  const bars = read.bars.map((b) => ({ ...b, caption: validateQuotes(b.caption, messages) }));
+  const cards = read.cards.map((c) => ({ ...c, body: validateQuotes(c.body, messages) }));
+
+  return {
+    ...read,
+    bars,
+    cards,
+    where_this_leaves_you: validateQuotes(read.where_this_leaves_you, messages),
+    suggested_move: validateQuotes(read.suggested_move, messages),
+    receipts,
+  };
+}
+
+/** When there's no conversation to validate against, strip every «» to plain text. */
+function stripAllQuotes(read: Read): Partial<Read> {
+  const strip = (s: string) => s.replace(/«([^«»]*)»/g, "$1");
+  return {
+    bars: read.bars.map((b) => ({ ...b, caption: strip(b.caption) })),
+    cards: read.cards.map((c) => ({ ...c, body: strip(c.body) })),
+    where_this_leaves_you: strip(read.where_this_leaves_you),
+    suggested_move: strip(read.suggested_move),
+  };
 }
 
 /** Pulls a JSON object out of the model's text, tolerating stray fences. */
@@ -122,6 +218,13 @@ function shapeGuard(raw: unknown): Read {
     ? obj.movement.map(guardMovement).filter((m): m is MovementNode => m !== null)
     : [];
 
+  // FLAG-54: receipts — shape-guarded here; the verbatim VALIDATION (drop forged
+  // bubbles, snap to the real message) happens in verbatimize() at generation, and
+  // on recall they're already-validated rows preserved as-is. Cap at 3.
+  const receipts = Array.isArray(obj.receipts)
+    ? obj.receipts.map(guardMoment).filter((m): m is ReadMoment => m !== null).slice(0, 3)
+    : [];
+
   return {
     headline: asString(obj.headline, "Here's what I'm noticing"),
     status_tag: asString(obj.status_tag, "Your read"),
@@ -135,7 +238,31 @@ function shapeGuard(raw: unknown): Read {
     },
     ...(delta.length > 0 ? { delta } : {}),
     ...(movement.length > 0 ? { movement } : {}),
+    ...(receipts.length > 0 ? { receipts } : {}),
   };
+}
+
+/** One receipt moment; null if it has no tag or no messages (dropped). The bubble
+ *  text is verbatim-validated separately in verbatimize(). */
+function guardMoment(raw: unknown): ReadMoment | null {
+  const m = isRecord(raw) ? raw : {};
+  if (typeof m.tag !== "string" || !m.tag.trim()) return null;
+  const messages = Array.isArray(m.messages)
+    ? m.messages.map(guardReceiptMsg).filter((x): x is ReadReceiptMsg => x !== null)
+    : [];
+  if (messages.length === 0) return null;
+  return {
+    tag: m.tag.trim(),
+    tone: m.tone === "neutral" ? "neutral" : "flag",
+    messages,
+    reads_as: asString(m.reads_as, ""),
+  };
+}
+
+function guardReceiptMsg(raw: unknown): ReadReceiptMsg | null {
+  const m = isRecord(raw) ? raw : {};
+  if (typeof m.text !== "string" || !m.text.trim()) return null;
+  return { speaker: m.speaker === "you" ? "you" : "them", text: m.text };
 }
 
 /** One persisted movement node; null if it's missing required fields (dropped). */

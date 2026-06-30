@@ -1570,3 +1570,166 @@
     opacity: 0.85;
   }
 }
+
+/* ---------- FLAG-54: evidence as proof (inline quotes, receipts, where-it-stands) ----------
+   Ported from evidence.html + reply-stands.html. Scoped to .friendRoot (--f-* theme
+   vars). BRAND chat bubbles — you = accent/right, them = muted/left (NOT WhatsApp/
+   iMessage). ev/rc/ws-prefixed to avoid collisions. */
+
+/* inline woven quote — exact words, styled where they sit in the prose */
+.evQ {
+  color: var(--f-ink);
+  font-weight: 500;
+  font-style: italic;
+}
+.evQ::before { content: "\201C"; }
+.evQ::after { content: "\201D"; }
+
+/* chat bubbles (shared by receipts + where-it-stands) */
+.evChat {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.evMsg {
+  max-width: 82%;
+  padding: 9px 13px;
+  font-size: 14px;
+  line-height: 1.42;
+  border-radius: 16px;
+  white-space: pre-wrap; /* render the verbatim message exactly as it is */
+  overflow-wrap: anywhere;
+}
+.evThem {
+  align-self: flex-start;
+  background: #f0e7db;
+  color: #3a322a;
+  border-bottom-left-radius: 5px;
+}
+.evYou {
+  align-self: flex-end;
+  background: var(--f-accent);
+  color: #fff;
+  border-bottom-right-radius: 5px;
+}
+.evWho {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  margin: 0 6px 3px;
+}
+.evThemWho { align-self: flex-start; }
+.evYouWho { align-self: flex-end; }
+.evLastTag {
+  align-self: flex-start;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--f-accent);
+  margin: 4px 0 0 6px;
+  letter-spacing: 0.04em;
+}
+
+/* receipts card */
+.rcCard {
+  margin-top: 4px;
+  background: var(--f-bubble);
+  border-radius: 20px;
+  padding: 6px 0 18px;
+  box-shadow: 0 1px 2px rgba(42, 35, 29, 0.04), 0 12px 30px rgba(42, 35, 29, 0.07);
+  border: 1px solid rgba(230, 220, 207, 0.7);
+}
+.rcHead { padding: 20px 22px 4px; }
+.rcEyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--f-accent);
+  margin-bottom: 5px;
+}
+.rcNote {
+  font-size: 12.5px;
+  color: var(--f-muted);
+  line-height: 1.5;
+}
+.rcMoment {
+  padding: 18px 22px;
+  border-top: 1px solid var(--f-line);
+}
+.rcMoment:first-of-type { border-top: 0; }
+.rcTag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--f-concern);
+  background: rgba(184, 87, 64, 0.1);
+  padding: 5px 11px;
+  border-radius: 999px;
+  margin-bottom: 12px;
+}
+.rcTagNeutral {
+  color: var(--f-muted);
+  background: rgba(154, 142, 129, 0.12);
+}
+.rcReadsAs {
+  font-size: 13px;
+  color: var(--f-ink-soft);
+  line-height: 1.5;
+  margin-top: 12px;
+  padding-left: 12px;
+  border-left: 2px solid var(--f-line);
+}
+.rcVerify {
+  font-size: 11.5px;
+  color: var(--f-muted);
+  margin: 14px 22px 0;
+  line-height: 1.5;
+  font-style: italic;
+}
+
+/* where-it-stands card */
+.wsCard {
+  margin-top: 4px;
+  background: var(--f-bubble);
+  border-radius: 20px;
+  padding: 6px 0 6px;
+  box-shadow: 0 1px 2px rgba(42, 35, 29, 0.04), 0 12px 30px rgba(42, 35, 29, 0.07);
+  border: 1px solid rgba(230, 220, 207, 0.7);
+}
+.wsCard .evChat { padding: 14px 22px 6px; }
+.wsCta {
+  padding: 16px 22px 18px;
+  border-top: 1px solid var(--f-line);
+  margin-top: 8px;
+}
+.wsReplyLine {
+  font-size: 13.5px;
+  color: var(--f-ink-soft);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+.wsReplyBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  background: var(--f-accent);
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  padding: 14px;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  box-shadow: 0 4px 14px rgba(188, 107, 58, 0.28);
+}
+.wsReplyBtn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(188, 107, 58, 0.36);
+}
+.wsIc { font-size: 17px; }

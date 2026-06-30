@@ -52,6 +52,28 @@ export interface Read {
    *  the same snapshot. Frozen as-shown (incl. the "when" labels). Not model-emitted —
    *  attached at save time. */
   movement?: MovementNode[];
+  /** FLAG-54: the "Key moments · receipts" — 2-3 telling exchanges shown as chat
+   *  bubbles. Model-SELECTED but every message is VALIDATED verbatim against the real
+   *  conversation at generation (non-matches dropped, empty moments dropped) and the
+   *  bubbles snapped to the full real message + real side. Persisted with the report
+   *  (like delta/movement) so recall shows the same receipts. */
+  receipts?: ReadMoment[];
+}
+
+/** FLAG-54: one receipt bubble — an EXACT real message + which side said it. */
+export interface ReadReceiptMsg {
+  speaker: "you" | "them";
+  text: string;
+}
+
+/** FLAG-54: one "key moment" receipt — a tag (what it shows), the verbatim exchange
+ *  as bubbles, and a short "reads as" line tying it to the read. */
+export interface ReadMoment {
+  tag: string;
+  /** flag = concerning (terracotta pill); neutral = grey. */
+  tone: "flag" | "neutral";
+  messages: ReadReceiptMsg[];
+  reads_as: string;
 }
 
 /** FLAG-53: one node on the movement-over-time timeline — a saved read replayed as a
