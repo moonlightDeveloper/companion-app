@@ -25,6 +25,12 @@ export type FriendItem =
 const DISCLAIMER =
   "Going off what you shared — I'm reading what they do, not guessing how they feel.";
 
+/** FLAG-54: drop «verbatim» marks for TYPED lines (the typewriter shouldn't type
+ *  guillemets). Inline quotes survive in the popped/revealed prose, styled there. */
+function stripQ(s: string): string {
+  return s.replace(/«([^«»]*)»/g, "$1");
+}
+
 /** Split into [first sentence, the rest] so a short punch types and the rest pops. */
 function firstSentence(s: string): [string, string] {
   const m = s.trim().match(/^(.*?[.!?])\s+([\s\S]*)$/);
@@ -41,7 +47,7 @@ export function toScript(
   // letter-by-letter — the deliberate "someone is writing this to you" gesture.
   // Everything after reveals plainly (fade/rise on scroll), no typing — see
   // FriendRead. These two are the only typed turns at the top (index 0, 1).
-  items.push({ t: "type", cls: "big", text: read.headline });
+  items.push({ t: "type", cls: "big", text: stripQ(read.headline) });
   items.push({ t: "type", cls: "small", text: DISCLAIMER });
   // FLAG-46 Bug 2: an identical re-send (same chat, no new messages) shows the
   // "nothing new" note here in the auto-reveal. The directional "Since last time"
@@ -69,7 +75,7 @@ export function toScript(
   const leadIdx = read.cards.findIndex((c) => c.kind === "Pattern");
   read.cards.forEach((c, i) => {
     if (rich && i === leadIdx) {
-      items.push({ t: "type", cls: "big", text: c.title });
+      items.push({ t: "type", cls: "big", text: stripQ(c.title) });
       if (c.body) items.push({ t: "pop", cls: "soft", text: c.body });
     } else {
       items.push({ t: "card", card: c });
@@ -77,7 +83,7 @@ export function toScript(
   });
 
   const [punch, rest] = firstSentence(read.where_this_leaves_you);
-  if (punch) items.push({ t: "type", cls: "accent", text: punch });
+  if (punch) items.push({ t: "type", cls: "accent", text: stripQ(punch) });
   if (rest) items.push({ t: "pop", cls: "soft", text: rest });
 
   if (read.suggested_move) items.push({ t: "move", text: read.suggested_move });

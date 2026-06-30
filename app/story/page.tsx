@@ -20,7 +20,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { Intake, Read, ReplyDraft, TranscriptMessage, DeltaChange, MovementNode } from "@/types";
+import type { Intake, Read, ReplyDraft, TranscriptMessage, DeltaChange, MovementNode, ReadMoment } from "@/types";
 import { saveConversation, evictExpired, getConversation, getRecentConversations, deletePersonConversations, pruneOrphanConversations } from "@/lib/localConversations";
 import { detectContinuation } from "@/lib/continuation";
 import { MAX_IMAGES } from "@/lib/cap";
@@ -2513,6 +2513,9 @@ function ReportScreen({
 }) {
   const read = report.result;
   const [conversation, setConversation] = useState<string | null>(null);
+  // FLAG-54: the "Where it stands now" card shows the same Help-me-reply button as
+  // the live page; tapping it reveals the recall reply path (ReplyHelper) inline.
+  const [showReply, setShowReply] = useState(false);
   useEffect(() => {
     if (canReply && !read.safety.flag) {
       getConversation(report.id).then(setConversation).catch(() => {});
@@ -2566,9 +2569,29 @@ function ReportScreen({
               />
             </div>
           ) : null}
+          {/* FLAG-54: persisted receipts replayed on recall — ABOVE the read body,
+              right after the before/after (or after the title when there's none). */}
+          {read.receipts && read.receipts.length > 0 && (
+            <div className={styles.friendRoot}>
+              <ReceiptsSection moments={read.receipts} nickname={nickname} />
+            </div>
+          )}
           <ReadBody read={read} />
           {canReply && conversation && conversation.trim() && (
-            <ReplyHelper name={nickname} conversation={conversation} />
+            <>
+              {/* "Where it stands now" — SAME design as the live page (chat bubbles +
+                  reply-line + Help-me-reply button). The button opens the recall reply
+                  path (ReplyHelper inline) instead of the live go("reply"). */}
+              <div className={styles.friendRoot}>
+                <WhereItStands
+                  conversation={conversation}
+                  nickname={nickname}
+                  flagged={isFlagged(read)}
+                  onReply={() => setShowReply(true)}
+                />
+              </div>
+              {showReply && <ReplyHelper name={nickname} conversation={conversation} />}
+            </>
           )}
         </>
       )}
@@ -2687,6 +2710,7 @@ function ReadScreen({
         nothingNew={nothingNew}
         movement={movement}
         nickname={name}
+        conversation={conversation}
         canReply={!!conversation.trim()}
         onReply={onReply}
       />
@@ -2723,20 +2747,20 @@ function ReadBody({ read }: { read: Read }) {
         {read.cards.map((c, i) => (
           <div key={i} className={styles.insight}>
             <div className={styles.k}>{c.kind}</div>
-            <h3>{c.title}</h3>
-            <p>{c.body}</p>
+            <h3>{stripQuotes(c.title)}</h3>
+            <p>{renderQuotes(c.body)}</p>
           </div>
         ))}
         {read.suggested_move && (
           <div className={`${styles.insight} ${styles.move}`}>
             <div className={styles.k}>Suggested move</div>
-            <p style={{ fontSize: 14 }}>{read.suggested_move}</p>
+            <p style={{ fontSize: 14 }}>{renderQuotes(read.suggested_move)}</p>
           </div>
         )}
         {read.where_this_leaves_you && (
           <div className={`${styles.insight} ${styles.relax}`}>
             <div className={styles.k}>Where this leaves you</div>
-            <p style={{ fontSize: 14 }}>{read.where_this_leaves_you}</p>
+            <p style={{ fontSize: 14 }}>{renderQuotes(read.where_this_leaves_you)}</p>
           </div>
         )}
       </div>
@@ -2770,6 +2794,7 @@ function FriendRead({
   nothingNew,
   movement,
   nickname,
+  conversation,
   canReply,
   onReply,
 }: {
@@ -2779,6 +2804,7 @@ function FriendRead({
   nothingNew: boolean;
   movement: MovementNode[] | null;
   nickname: string;
+  conversation: string;
   canReply: boolean;
   onReply: () => void;
 }) {
@@ -2916,6 +2942,14 @@ function FriendRead({
                   autoScroll={true}
                 />
               ) : null}
+              {/* FLAG-54: "Key moments · receipts" — verbatim-validated exchanges. Sits
+                  HIGH: right after the before/after (or after the title when there's
+                  none), ABOVE the read body. Absent when no receipts survived. */}
+              {read.receipts && read.receipts.length > 0 && (
+                <RevealTurn revealAll={revealAll}>
+                  <ReceiptsSection moments={read.receipts} nickname={nickname} />
+                </RevealTurn>
+              )}
               {/* The read body (bars, cards, where-this-leaves-you, move) — each fades/
                   rises in as it enters the viewport, no typing. */}
               {script.slice(DELTA_AFTER).map((item, i) => (
@@ -2923,7 +2957,21 @@ function FriendRead({
                   <FriendTurn item={item} />
                 </RevealTurn>
               ))}
-              {/* Cross-device verify offer: the closing line, revealed as you reach it. */}
+              {/* FLAG-54: "Where it stands now" + Help me reply — the very end. The
+                  last real messages (verbatim) + the chat-context reply entry, which
+                  wires to the EXISTING reply flow (onReply). Gated on the conversation
+                  being in hand (same as reply). */}
+              {canReply && (
+                <RevealTurn revealAll={revealAll}>
+                  <WhereItStands
+                    conversation={conversation}
+                    nickname={nickname}
+                    flagged={isFlagged(read)}
+                    onReply={onReply}
+                  />
+                </RevealTurn>
+              )}
+              {/* Cross-device verify offer: the closing fine print. */}
               <RevealTurn revealAll={revealAll}>
                 <p className={`${styles.friendFine} ${styles.friendSaved}`}>
                   <Link href="/signin" style={{ color: "var(--f-accent)" }}>
@@ -2941,13 +2989,8 @@ function FriendRead({
           handles the iPhone home bar. */}
       {openingDone && (
         <div className={styles.friendActions}>
-          {/* Only show "Help me reply" when the conversation is actually in hand —
-              never a visible-but-dead button. */}
-          {canReply && (
-            <button className={`${styles.friendBtn} ${styles.friendBtnPrimary}`} onClick={onReply}>
-              ✍️ Help me reply
-            </button>
-          )}
+          {/* "Help me reply" now lives in the "Where it stands now" card at the end
+              (FLAG-54 chat-context entry) — not duplicated here. */}
           <Link href="/" className={`${styles.friendBtn} ${styles.friendBtnDark}`}>
             Read another conversation
           </Link>
@@ -3264,7 +3307,7 @@ function FriendTurn({ item }: { item: FriendItem }) {
         : `${styles.friendSay} ${styles.friendSoft}`;
     return (
       <div className={styles.friendTurn}>
-        <p className={`${cls} ${styles.friendPop}`}>{item.text}</p>
+        <p className={`${cls} ${styles.friendPop}`}>{renderQuotes(item.text)}</p>
       </div>
     );
   }
@@ -3282,7 +3325,7 @@ function FriendTurn({ item }: { item: FriendItem }) {
           <div className={styles.friendTrack}>
             <div className={styles.friendFill} style={{ width: `${item.bar.level}%`, background: color }} />
           </div>
-          <p>{item.bar.caption}</p>
+          <p>{renderQuotes(item.bar.caption)}</p>
         </div>
       </div>
     );
@@ -3292,8 +3335,8 @@ function FriendTurn({ item }: { item: FriendItem }) {
       <div className={styles.friendTurn}>
         <div className={styles.friendAside}>
           <div className={styles.friendTiny}>{item.card.kind}</div>
-          <h3 className={styles.friendCardTitle}>{item.card.title}</h3>
-          <p>{item.card.body}</p>
+          <h3 className={styles.friendCardTitle}>{stripQuotes(item.card.title)}</h3>
+          <p>{renderQuotes(item.card.body)}</p>
         </div>
       </div>
     );
@@ -3417,6 +3460,165 @@ function ReplyScreen({
   );
 }
 
+/* ---------- FLAG-54: evidence as proof (receipts + where-it-stands) ---------- */
+
+/** Render «verbatim» markers as styled inline quotes; everything else is plain text.
+ *  The marks are only present on quotes that passed verbatim validation (analyze). */
+function renderQuotes(text: string): ReactNode {
+  return text.split(/(«[^«»]*»)/g).map((part, i) => {
+    const m = part.match(/^«([^«»]*)»$/);
+    return m ? (
+      <span key={i} className={styles.evQ}>
+        {m[1]}
+      </span>
+    ) : (
+      part
+    );
+  });
+}
+
+/** Drop the «» marks, keeping the inner text — for TYPED lines (the typewriter
+ *  shouldn't type guillemets) where styled spans can't be used. */
+function stripQuotes(text: string): string {
+  return text.replace(/«([^«»]*)»/g, "$1");
+}
+
+/** Does the read show concerning/boundary-pushing behaviour? Drives the reply-line
+ *  copy ("no pressure to be nice…") — kept from being preachy by only firing here. */
+function isFlagged(read: Read): boolean {
+  return (
+    read.safety.flag ||
+    (read.receipts ?? []).some((r) => r.tone === "flag") ||
+    read.bars.some((b) => b.tone === "low")
+  );
+}
+
+type Bubble = { speaker: "you" | "them"; text: string };
+
+/** The real conversation's last `n` messages, verbatim — parsed from the stored
+ *  "Speaker: text" lines (no model). Verbatim by construction. */
+function lastMessages(conversation: string, n: number): Bubble[] {
+  const msgs: Bubble[] = [];
+  for (const line of conversation.split("\n")) {
+    const m = line.match(/^\s*([^:\n]{1,40}):\s+(.*)$/);
+    if (!m || !m[2].trim()) continue;
+    msgs.push({ speaker: /^you$/i.test(m[1].trim()) ? "you" : "them", text: m[2].trim() });
+  }
+  return msgs.slice(-n);
+}
+
+/** Chat bubbles in the app's BRAND colours (you = accent/right, them = muted/left) —
+ *  a who-label per speaker-run, the last bubble optionally tagged. Shared by the
+ *  receipts and the "where it stands" sections. */
+function ChatThread({
+  messages,
+  nickname,
+  lastTag,
+}: {
+  messages: Bubble[];
+  nickname: string;
+  lastTag?: string;
+}) {
+  const out: ReactNode[] = [];
+  let prev: string | null = null;
+  messages.forEach((m, i) => {
+    if (m.speaker !== prev) {
+      out.push(
+        <span
+          key={`w${i}`}
+          className={`${styles.evWho} ${m.speaker === "you" ? styles.evYouWho : styles.evThemWho}`}
+        >
+          {m.speaker === "you" ? "You" : nickname}
+        </span>,
+      );
+      prev = m.speaker;
+    }
+    const isLast = i === messages.length - 1;
+    out.push(
+      <div
+        key={`m${i}`}
+        className={`${styles.evMsg} ${m.speaker === "you" ? styles.evYou : styles.evThem} ${
+          isLast && lastTag ? styles.evLast : ""
+        }`}
+      >
+        {m.text}
+      </div>,
+    );
+    if (isLast && lastTag) out.push(<span key="lt" className={styles.evLastTag}>{lastTag}</span>);
+  });
+  return <div className={styles.evChat}>{out}</div>;
+}
+
+/** "Key moments · the receipts" — the 2-3 telling exchanges as verbatim bubbles.
+ *  Every message here was validated verbatim against the real conversation at
+ *  generation (analyze → verbatimize); nothing here is invented or paraphrased. */
+function ReceiptsSection({ moments, nickname }: { moments: ReadMoment[]; nickname: string }) {
+  return (
+    <div className={styles.rcCard}>
+      <div className={styles.rcHead}>
+        <div className={styles.rcEyebrow}>Key moments · the receipts</div>
+        <p className={styles.rcNote}>
+          The exchanges I&rsquo;m reading this from &mdash; {nickname}&rsquo;s words and yours,
+          exactly as they were. You can check them yourself.
+        </p>
+      </div>
+      {moments.map((mo, i) => (
+        <div key={i} className={styles.rcMoment}>
+          <span className={`${styles.rcTag} ${mo.tone === "neutral" ? styles.rcTagNeutral : ""}`}>
+            {mo.tag}
+          </span>
+          <ChatThread messages={mo.messages} nickname={nickname} />
+          {mo.reads_as && <p className={styles.rcReadsAs}>{renderQuotes(mo.reads_as)}</p>}
+        </div>
+      ))}
+      <p className={styles.rcVerify}>
+        Every read above points back to real messages &mdash; nothing&rsquo;s invented. What they
+        add up to is yours to decide.
+      </p>
+    </div>
+  );
+}
+
+/** "Where it stands now" — the real last few messages + the Help-me-reply entry.
+ *  Verbatim by construction (parsed from the conversation). `onReply` wires to the
+ *  EXISTING reply flow; when null (recall), the chat shows without its own button. */
+function WhereItStands({
+  conversation,
+  nickname,
+  flagged,
+  onReply,
+}: {
+  conversation: string;
+  nickname: string;
+  flagged: boolean;
+  onReply: (() => void) | null;
+}) {
+  const last = lastMessages(conversation, 3);
+  if (last.length === 0) return null;
+  const lastFromYou = last[last.length - 1].speaker === "you";
+  const tag = lastFromYou ? "↑ your last message" : `↑ ${nickname}'s last message`;
+  return (
+    <div className={styles.wsCard}>
+      <div className={styles.rcHead}>
+        <div className={styles.rcEyebrow}>Where it stands now</div>
+        <p className={styles.rcNote}>The last of the conversation &mdash; what you&rsquo;d be replying to.</p>
+      </div>
+      <ChatThread messages={last} nickname={nickname} lastTag={tag} />
+      {onReply && (
+        <div className={styles.wsCta}>
+          <p className={styles.wsReplyLine}>
+            Want help responding to that? I&rsquo;ll draft a few ways to reply &mdash; clear, in your
+            voice{flagged ? ", no pressure to be nice if you don't want to be" : ""}.
+          </p>
+          <button className={styles.wsReplyBtn} onClick={onReply}>
+            <span className={styles.wsIc}>✎</span> Help me reply
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ReplyHelper({ name, conversation }: { name: string; conversation: string }) {
   const [intent, setIntent] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
@@ -3534,7 +3736,7 @@ function BarRow({ bar, color }: { bar: Read["bars"][number]; color: string }) {
           style={{ background: color, width: `${width}%` }}
         />
       </div>
-      <p className={styles.barcap}>{bar.caption}</p>
+      <p className={styles.barcap}>{renderQuotes(bar.caption)}</p>
     </div>
   );
 }
