@@ -1,6 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type {
+  AxisInstance,
+  AxisLean,
   BarTone,
+  CanonicalAxis,
   CardKind,
   DeltaChange,
   Intake,
@@ -14,6 +17,10 @@ import type {
 import { SYSTEM_PROMPT, buildUserMessage, type Clarification } from "@/lib/prompt";
 import { modelFor, cachedSystem } from "./models";
 import { mockLlmEnabled, MOCK_READ } from "./mockLlm";
+import { axisRef } from "./recurrence";
+
+const AXES = new Set<string>(["effort_balance", "plan_clarity", "reply_consistency"]);
+const LEANS = new Set<string>(["healthy", "leaning", "off", "uncertain"]);
 
 /** Thrown when the model call or JSON parsing fails. */
 export class AnalyzeError extends Error {}
@@ -38,7 +45,7 @@ export async function analyze(
   try {
     const response = await client.messages.create({
       model: modelFor("analyze"),
-      max_tokens: 3000, // FLAG-54: headroom for receipts + inline quotes
+      max_tokens: 4000, // FLAG-54/56: headroom for receipts + inline quotes + axis instances
       // FLAG-44: 0.3, not the default 1.0. The verdict is stable either way, but
       // 1.0 jitters the surface wording run-to-run (reads "unreliable"); 0.3 keeps
       // the read consistent without going fully deterministic.
@@ -71,7 +78,42 @@ export async function analyze(
   // against the REAL conversation; non-matches are dropped / de-quoted. Forged
   // receipts are structurally impossible. Generation-time only (we have the
   // conversation here); save-mode guardRead just preserves what was validated.
-  return verbatimize(shapeGuard(parsed), intake.conversation || "");
+  const read = verbatimize(shapeGuard(parsed), intake.conversation || "");
+  // FLAG-56: tag the axis instances additively — verbatim-anchored + hashed to a
+  // stable ref, off-enum dropped. (shapeGuard dropped the raw quote-form instances;
+  // this produces the final ref-form. Save-mode reads keep their already-ref'd ones.)
+  const tagged = tagInstances(parsed, intake.conversation || "");
+  return tagged.length > 0 ? { ...read, axisInstances: tagged } : read;
+}
+
+/**
+ * FLAG-56: turn the model's raw axis-instance tags ({ axis, lean, quote }) into stored
+ * instances ({ axis, lean, ref }). Each is verbatim-anchored (snapToReal) and the ref
+ * is a content hash of the REAL exchange, so distinct moments dedupe reliably. Off-enum
+ * axes / invalid leans / untraceable quotes are dropped; per-report dedupe on (axis,ref)
+ * so one moment tagged twice for one axis counts once (global dedupe is the gate's job).
+ */
+function tagInstances(raw: unknown, conversation: string): AxisInstance[] {
+  const obj = isRecord(raw) ? raw : {};
+  if (!Array.isArray(obj.axisInstances)) return [];
+  const messages = conversationMessages(conversation);
+  if (messages.length === 0) return []; // nothing to verify against → tag nothing
+  const out: AxisInstance[] = [];
+  const seen = new Set<string>();
+  for (const rawInst of obj.axisInstances) {
+    const m = isRecord(rawInst) ? rawInst : {};
+    if (typeof m.axis !== "string" || !AXES.has(m.axis)) continue; // off-enum dropped
+    if (typeof m.lean !== "string" || !LEANS.has(m.lean)) continue;
+    if (typeof m.quote !== "string") continue;
+    const snap = snapToReal(m.quote, messages); // verbatim anchor
+    if (!snap) continue; // untraceable → can't prove distinct → drop
+    const ref = axisRef(snap.text);
+    const key = `${m.axis}#${ref}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ axis: m.axis as CanonicalAxis, lean: m.lean as AxisLean, ref });
+  }
+  return out;
 }
 
 /** Normalize for the verbatim substring match: lowercase + collapse whitespace +
@@ -225,6 +267,13 @@ function shapeGuard(raw: unknown): Read {
     ? obj.receipts.map(guardMoment).filter((m): m is ReadMoment => m !== null).slice(0, 3)
     : [];
 
+  // FLAG-56: preserve already-validated axis instances (final ref form) — the SAVE
+  // path. At generation the raw quote-form instances carry no ref, so they're dropped
+  // here and re-produced by tagInstances(); on save they're kept as-is.
+  const axisInstances = Array.isArray(obj.axisInstances)
+    ? obj.axisInstances.map(guardAxisInstance).filter((a): a is AxisInstance => a !== null)
+    : [];
+
   return {
     headline: asString(obj.headline, "Here's what I'm noticing"),
     status_tag: asString(obj.status_tag, "Your read"),
@@ -239,7 +288,18 @@ function shapeGuard(raw: unknown): Read {
     ...(delta.length > 0 ? { delta } : {}),
     ...(movement.length > 0 ? { movement } : {}),
     ...(receipts.length > 0 ? { receipts } : {}),
+    ...(axisInstances.length > 0 ? { axisInstances } : {}),
   };
+}
+
+/** One stored axis instance (final ref form) — null unless it has a valid enum axis,
+ *  a valid lean, and a non-empty ref. Off-enum / unref'd tags are dropped defensively. */
+function guardAxisInstance(raw: unknown): AxisInstance | null {
+  const m = isRecord(raw) ? raw : {};
+  if (typeof m.axis !== "string" || !AXES.has(m.axis)) return null;
+  if (typeof m.lean !== "string" || !LEANS.has(m.lean)) return null;
+  if (typeof m.ref !== "string" || !m.ref) return null;
+  return { axis: m.axis as CanonicalAxis, lean: m.lean as AxisLean, ref: m.ref };
 }
 
 /** One receipt moment; null if it has no tag or no messages (dropped). The bubble
