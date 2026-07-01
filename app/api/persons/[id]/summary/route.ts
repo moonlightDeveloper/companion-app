@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { listReports } from "@/lib/db";
-import { LATER_TIMEPOINT_MIN_INTERVAL } from "@/lib/recurrence";
+import { LATER_TIMEPOINT_MIN_INTERVAL, deriveCardVerdicts } from "@/lib/recurrence";
 import { computePatternLine, type ReportLite } from "@/lib/patternLine";
 import type { AxisInstance } from "@/types";
 
@@ -52,8 +52,13 @@ export async function GET(
     // FLAG-57: the pattern line — DETERMINISTIC (no model call), computed from the
     // persisted per-report verdicts + timestamps. null below the evidence bar → teaser.
     const pattern = computePatternLine(lites, nickname);
+    // FLAG-58: conflict-aware card verdicts — cross-report disagreement (a past boundary
+    // crossing under a later warm read; hot/cold effort) surfaces as MIXED, never a
+    // pooled-majority or single-latest tone. Deterministic; no model call.
+    const verdicts = deriveCardVerdicts(lites);
     return NextResponse.json({
       instances,
+      verdicts,
       laterTimepoint,
       patternLine: pattern.line,
       patternSafety: pattern.safetyRaise,
@@ -69,6 +74,7 @@ export async function GET(
 
 const EMPTY = {
   instances: [],
+  verdicts: [],
   laterTimepoint: false,
   patternLine: null,
   patternSafety: false,

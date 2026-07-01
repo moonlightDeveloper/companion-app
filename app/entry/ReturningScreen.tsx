@@ -4,10 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ReturningCard } from "./ReturningCard";
 import { toCardModel, type CardModel } from "@/lib/cardModel";
-import { deriveAxisVerdicts } from "@/lib/recurrence";
+import type { AxisVerdict } from "@/lib/recurrence";
 import { topRows } from "@/lib/axisCopy";
 import type { Person } from "@/lib/db";
-import type { AxisInstance } from "@/types";
 import styles from "./ReturningScreen.module.css";
 
 // TODO(entry-router): point at the FLAG-47 email-code recovery flow when the `/` router
@@ -52,8 +51,9 @@ export function ReturningScreen() {
             .then((r) => r.json())
             .catch(() => ({}));
           if (cancelled) return;
-          // Rank by significance + cap at 3 (boundary + off-tone over neutral).
-          const behavior = topRows(deriveAxisVerdicts((summary.instances ?? []) as AxisInstance[]));
+          // FLAG-58: conflict-aware verdicts computed server-side (cross-report clashes →
+          // mixed). Rank by significance + cap at 3 (boundary + off-tone over neutral).
+          const behavior = topRows((summary.verdicts ?? []) as AxisVerdict[]);
           // FLAG-57: pattern line (deterministic, from /summary — zero model calls).
           const patternLine = typeof summary.patternLine === "string" ? summary.patternLine : undefined;
           const patternSafety = summary.patternSafety === true;

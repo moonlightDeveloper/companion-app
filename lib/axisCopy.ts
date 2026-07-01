@@ -27,7 +27,9 @@ const MIXED_COPY: Record<CanonicalAxis, string> = {
   effort_balance: "runs hot and cold",
   plan_clarity: "plans, then nothing",
   reply_consistency: "depends on the day",
-  boundary_response: "depends how you push back",
+  // FLAG-58: a boundary crossing in one report must stay visible under a later warm read —
+  // past tense, never erased, never a flat "pushed past your no" implying it's ongoing.
+  boundary_response: "has crossed your line before",
 };
 const MIXED_FALLBACK = "goes back and forth";
 
