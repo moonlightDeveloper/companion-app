@@ -69,7 +69,11 @@ export interface Read {
 /** FLAG-56: the CLOSED canonical behavior-axis vocabulary. Server-pinned so the model
  *  can't invent axis names and rebuild the comparability mush; anything off-enum is
  *  never emitted (and the route drops it defensively). Extend deliberately, keep small. */
-export type CanonicalAxis = "effort_balance" | "plan_clarity" | "reply_consistency";
+export type CanonicalAxis =
+  | "effort_balance"
+  | "plan_clarity"
+  | "reply_consistency"
+  | "boundary_response";
 
 /** Which way one instance leans. "uncertain" = the behavior recurs but its DIRECTION is
  *  ambiguous — it still counts toward recurrence and feeds the honest "mixed" read. */

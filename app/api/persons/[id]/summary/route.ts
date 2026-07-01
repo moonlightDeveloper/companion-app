@@ -8,7 +8,12 @@ export const runtime = "nodejs";
 
 // Defensive re-check of the closed enum at the boundary — a prompt/storage regression
 // can't leak junk rows onto the card even if a bad axis slipped past generation.
-const AXES = new Set<string>(["effort_balance", "plan_clarity", "reply_consistency"]);
+const AXES = new Set<string>([
+  "effort_balance",
+  "plan_clarity",
+  "reply_consistency",
+  "boundary_response",
+]);
 
 /**
  * FLAG-56: the per-person recurrence-gate input. Aggregates the axis instances stored

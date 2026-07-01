@@ -19,7 +19,12 @@ import { modelFor, cachedSystem } from "./models";
 import { mockLlmEnabled, MOCK_READ } from "./mockLlm";
 import { axisRef } from "./recurrence";
 
-const AXES = new Set<string>(["effort_balance", "plan_clarity", "reply_consistency"]);
+const AXES = new Set<string>([
+  "effort_balance",
+  "plan_clarity",
+  "reply_consistency",
+  "boundary_response",
+]);
 const LEANS = new Set<string>(["healthy", "leaning", "off", "uncertain"]);
 
 /** Thrown when the model call or JSON parsing fails. */

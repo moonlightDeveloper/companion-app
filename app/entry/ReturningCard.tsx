@@ -51,10 +51,12 @@ export function ReturningCard({
         )}
       </div>
 
-      {/* behavior rows — hidden unless enriched (not in the roster). */}
+      {/* behavior rows — hidden unless enriched (not in the roster). Ranked + capped to
+          3 by the caller (topRows); slice here is a defensive backstop so the card can
+          never grow past 3. */}
       {model.behavior && model.behavior.length > 0 && (
         <div className={styles.reads}>
-          {model.behavior.map((r, i) => (
+          {model.behavior.slice(0, 3).map((r, i) => (
             <div key={i} className={styles.read}>
               <span className={`${styles.dot} ${dotClass[r.tone]}`} />
               <span className={styles.k}>{r.label}</span>

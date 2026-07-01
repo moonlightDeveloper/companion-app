@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ReturningCard } from "./ReturningCard";
 import { toCardModel, type CardModel } from "@/lib/cardModel";
 import { deriveAxisVerdicts } from "@/lib/recurrence";
-import { axisRow } from "@/lib/axisCopy";
+import { topRows } from "@/lib/axisCopy";
 import type { Person } from "@/lib/db";
 import type { AxisInstance } from "@/types";
 import styles from "./ReturningScreen.module.css";
@@ -50,7 +50,8 @@ export function ReturningScreen() {
             .then((r) => r.json())
             .catch(() => ({ instances: [] }));
           if (cancelled) return;
-          const behavior = deriveAxisVerdicts((summary.instances ?? []) as AxisInstance[]).map(axisRow);
+          // Rank by significance + cap at 3 (boundary + off-tone over neutral).
+          const behavior = topRows(deriveAxisVerdicts((summary.instances ?? []) as AxisInstance[]));
           if (behavior.length === 0) return;
           setCards((cur) => (cur ? cur.map((c) => (c.id === p.id ? { ...c, behavior } : c)) : cur));
         }),
