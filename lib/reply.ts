@@ -6,8 +6,8 @@ import { mockLlmEnabled, MOCK_REPLY } from "./mockLlm";
 /** Thrown when the model call or JSON parsing fails. */
 export class ReplyError extends Error {}
 
-function systemPrompt(nickname: string): string {
-  return [
+function systemPrompt(nickname: string, safety: boolean): string {
+  const lines = [
     "You help the user write their next message in a dating/messaging conversation.",
     "",
     `You are given the conversation so far (the other person is "${nickname}") and what the user wants to get across. Write 2–3 short reply options the USER could send, each in a clearly different tone (e.g. warm, direct, light/playful).`,
@@ -17,16 +17,28 @@ function systemPrompt(nickname: string): string {
     "- Honour the user's stated intent; don't invent facts or commitments.",
     "- No real names; refer to the other person naturally if needed.",
     "- No preamble, no coaching — just the messages.",
+  ];
+  if (safety) {
+    // FLAG-59: this conversation flagged for boundary-override / coercion. The user is
+    // free to reply, but the drafts must HOLD THE LINE, never help them appease.
+    lines.push(
+      "",
+      "IMPORTANT — this conversation shows the other person overriding a stated limit or pushing past a 'no'. Bias EVERY draft toward clear, firm, boundary-holding language, or a clean disengagement. The tones here are variations of firmness (e.g. Clear, Firm, Done) — never warm/playful/rapport-building. Do NOT smooth it over, soften or walk back the boundary, apologise for having a limit, over-explain, justify, or negotiate. The user owes them nothing — a reply can simply restate the limit once, or end the conversation. Honour the user's stated intent, but keep it firm.",
+    );
+  }
+  lines.push(
     "",
     "Output ONLY JSON of this exact shape, no prose, no code fences:",
     '{ "drafts": [ { "tone": "Warm", "text": "..." } ] }',
-  ].join("\n");
+  );
+  return lines.join("\n");
 }
 
 export async function draftReplies(params: {
   conversation: string;
   intent: string;
   nickname: string;
+  safety?: boolean;
 }): Promise<ReplyDraft[]> {
   if (mockLlmEnabled()) return MOCK_REPLY;
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -40,7 +52,7 @@ export async function draftReplies(params: {
     const response = await client.messages.create({
       model: modelFor("reply"),
       max_tokens: 1024,
-      system: cachedSystem(systemPrompt(name)),
+      system: cachedSystem(systemPrompt(name, params.safety === true)),
       messages: [
         {
           role: "user",

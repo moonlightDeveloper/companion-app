@@ -1732,4 +1732,18 @@
   transform: translateY(-1px);
   box-shadow: 0 6px 18px rgba(188, 107, 58, 0.36);
 }
+/* FLAG-59: on a flagged read the reply is the QUIETER, secondary option — a calm
+   outline, not the prominent terracotta CTA. */
+.wsReplyBtnQuiet {
+  background: transparent;
+  color: var(--f-ink-soft);
+  border: 1px solid var(--f-line);
+  box-shadow: none;
+}
+.wsReplyBtnQuiet:hover {
+  transform: none;
+  border-color: var(--f-accent);
+  color: var(--f-ink);
+  box-shadow: none;
+}
 .wsIc { font-size: 17px; }
