@@ -2502,6 +2502,21 @@ function HistoryScreen({
   );
 }
 
+const DEFAULT_SAFETY_NOTE =
+  "Some of what you shared reads as pressure past a clear no. Trust that instinct — you don’t have to keep engaging. Reach out to people you trust, or your local support services. You don’t have to handle this alone.";
+
+/** FLAG-59: the safety note LEADS the read when safety.flag is set (boundary-override /
+ *  coercion). It names the concern plainly and coexists with the full behaviour read
+ *  below — it never replaces or minimizes it. */
+function SafetyBanner({ note }: { note: string | null }) {
+  return (
+    <div className={`${styles.insight} ${styles.relax}`} style={{ marginBottom: 16 }}>
+      <div className={styles.k}>This may not be safe</div>
+      <p style={{ fontSize: 14 }}>{note || DEFAULT_SAFETY_NOTE}</p>
+    </div>
+  );
+}
+
 function ReportScreen({
   nickname,
   report,
@@ -2533,15 +2548,11 @@ function ReportScreen({
         </p>
       </div>
 
-      {read.safety.flag ? (
-        <div className={`${styles.insight} ${styles.relax}`}>
-          <div className={styles.k}>You matter here</div>
-          <p style={{ fontSize: 14 }}>
-            {read.safety.note ||
-              "Some of what you shared worries me for your safety. Please reach out to people you trust."}
-          </p>
-        </div>
-      ) : (
+      {/* FLAG-59: on a safety flag the supportive note LEADS, then the full read still
+          follows (bars/receipts intact) — never replaced. Reply stays suppressed (the
+          conversation isn't loaded on a flagged read — see the effect above). */}
+      {read.safety.flag && <SafetyBanner note={read.safety.note} />}
+      {(
         <>
           <div className={styles.status}>
             <span className={styles.pill}>{read.status_tag}</span>
@@ -2676,32 +2687,12 @@ function ReadScreen({
   if (!read) return null;
 
   // Safety case: show only the supportive note.
-  if (read.safety.flag) {
-    return (
-      <section className={styles.screen}>
-        <div className={styles.stepHead}>
-          <div className={styles.questionWrap} style={{ minHeight: 60 }}>
-            <h2 className={styles.question}>Let&rsquo;s slow down for a moment.</h2>
-          </div>
-        </div>
-        <div className={`${styles.insight} ${styles.relax}`}>
-          <div className={styles.k}>You matter here</div>
-          <p style={{ fontSize: 14 }}>
-            {read.safety.note ||
-              "Some of what you shared worries me for your safety. Please reach out to people you trust, or your local support services. You don’t have to handle this alone."}
-          </p>
-        </div>
-        <div className={styles.footerActions}>
-          <Link href="/" className={styles.secondary} style={{ display: "block", textAlign: "center" }}>
-            Back to home
-          </Link>
-        </div>
-      </section>
-    );
-  }
-
   return (
     <section className={styles.screen}>
+      {/* FLAG-59: on a safety flag the supportive note LEADS, then the full behaviour
+          read still follows below (never replaced/minimized). Reply is suppressed on a
+          flagged read — you don't have to keep engaging. */}
+      {read.safety.flag && <SafetyBanner note={read.safety.note} />}
       {/* FLAG-48: the read is delivered as a friend talking it through. Pure
           presentation — the analysis/conclusions are unchanged (Option A maps the
           existing Read fields to typed/pop/reveal turns). */}
@@ -2713,7 +2704,7 @@ function ReadScreen({
         movement={movement}
         nickname={name}
         conversation={conversation}
-        canReply={!!conversation.trim()}
+        canReply={!!conversation.trim() && !read.safety.flag}
         onReply={onReply}
       />
 
