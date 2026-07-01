@@ -954,6 +954,7 @@ export default function Story() {
             <ReplyScreen
               name={name}
               conversation={answers.conversation}
+              safety={!!read?.safety.flag}
               onBack={back}
             />
           )}
@@ -2502,6 +2503,21 @@ function HistoryScreen({
   );
 }
 
+const DEFAULT_SAFETY_NOTE =
+  "Some of what you shared reads as pressure past a clear no. Trust that instinct — you don’t have to keep engaging. Reach out to people you trust, or your local support services. You don’t have to handle this alone.";
+
+/** FLAG-59: the safety note LEADS the read when safety.flag is set (boundary-override /
+ *  coercion). It names the concern plainly and coexists with the full behaviour read
+ *  below — it never replaces or minimizes it. */
+function SafetyBanner({ note }: { note: string | null }) {
+  return (
+    <div className={`${styles.insight} ${styles.relax}`} style={{ marginBottom: 16 }}>
+      <div className={styles.k}>This may not be safe</div>
+      <p style={{ fontSize: 14 }}>{note || DEFAULT_SAFETY_NOTE}</p>
+    </div>
+  );
+}
+
 function ReportScreen({
   nickname,
   report,
@@ -2517,10 +2533,12 @@ function ReportScreen({
   // the live page; tapping it reveals the recall reply path (ReplyHelper) inline.
   const [showReply, setShowReply] = useState(false);
   useEffect(() => {
-    if (canReply && !read.safety.flag) {
+    // FLAG-59: reply stays available even on a flagged read (user autonomy) — the
+    // drafts just bias firm (see the safety pass-through below).
+    if (canReply) {
       getConversation(report.id).then(setConversation).catch(() => {});
     }
-  }, [canReply, report.id, read.safety.flag]);
+  }, [canReply, report.id]);
 
   return (
     <section className={styles.screen}>
@@ -2533,15 +2551,11 @@ function ReportScreen({
         </p>
       </div>
 
-      {read.safety.flag ? (
-        <div className={`${styles.insight} ${styles.relax}`}>
-          <div className={styles.k}>You matter here</div>
-          <p style={{ fontSize: 14 }}>
-            {read.safety.note ||
-              "Some of what you shared worries me for your safety. Please reach out to people you trust."}
-          </p>
-        </div>
-      ) : (
+      {/* FLAG-59: on a safety flag the supportive note LEADS, then the full read still
+          follows (bars/receipts intact) — never replaced. Reply stays suppressed (the
+          conversation isn't loaded on a flagged read — see the effect above). */}
+      {read.safety.flag && <SafetyBanner note={read.safety.note} />}
+      {(
         <>
           <div className={styles.status}>
             <span className={styles.pill}>{read.status_tag}</span>
@@ -2589,10 +2603,13 @@ function ReportScreen({
                   conversation={conversation}
                   nickname={nickname}
                   flagged={isFlagged(read)}
+                  safety={read.safety.flag}
                   onReply={showReply ? null : () => setShowReply(true)}
                 />
               </div>
-              {showReply && <ReplyHelper name={nickname} conversation={conversation} />}
+              {showReply && (
+                <ReplyHelper name={nickname} conversation={conversation} safety={read.safety.flag} />
+              )}
             </>
           )}
         </>
@@ -2676,32 +2693,12 @@ function ReadScreen({
   if (!read) return null;
 
   // Safety case: show only the supportive note.
-  if (read.safety.flag) {
-    return (
-      <section className={styles.screen}>
-        <div className={styles.stepHead}>
-          <div className={styles.questionWrap} style={{ minHeight: 60 }}>
-            <h2 className={styles.question}>Let&rsquo;s slow down for a moment.</h2>
-          </div>
-        </div>
-        <div className={`${styles.insight} ${styles.relax}`}>
-          <div className={styles.k}>You matter here</div>
-          <p style={{ fontSize: 14 }}>
-            {read.safety.note ||
-              "Some of what you shared worries me for your safety. Please reach out to people you trust, or your local support services. You don’t have to handle this alone."}
-          </p>
-        </div>
-        <div className={styles.footerActions}>
-          <Link href="/" className={styles.secondary} style={{ display: "block", textAlign: "center" }}>
-            Back to home
-          </Link>
-        </div>
-      </section>
-    );
-  }
-
   return (
     <section className={styles.screen}>
+      {/* FLAG-59: on a safety flag the supportive note LEADS, then the full behaviour
+          read still follows below (never replaced/minimized). Reply is suppressed on a
+          flagged read — you don't have to keep engaging. */}
+      {read.safety.flag && <SafetyBanner note={read.safety.note} />}
       {/* FLAG-48: the read is delivered as a friend talking it through. Pure
           presentation — the analysis/conclusions are unchanged (Option A maps the
           existing Read fields to typed/pop/reveal turns). */}
@@ -2969,6 +2966,7 @@ function FriendRead({
                     conversation={conversation}
                     nickname={nickname}
                     flagged={isFlagged(read)}
+                    safety={read.safety.flag}
                     onReply={onReply}
                   />
                 </RevealTurn>
@@ -3429,10 +3427,12 @@ function FixBackstop({
 function ReplyScreen({
   name,
   conversation,
+  safety,
   onBack,
 }: {
   name: string;
   conversation: string;
+  safety?: boolean;
   onBack: () => void;
 }) {
   return (
@@ -3445,9 +3445,11 @@ function ReplyScreen({
       </div>
       <div className={styles.replyBody}>
         <p className={styles.subtext} style={{ marginTop: 0, marginBottom: 4 }}>
-          Drafting a reply to {name}. Tell me what you want to land.
+          {safety
+            ? "You don’t owe them a reply. If you want to respond, I’ll help you say it clearly and firmly."
+            : `Drafting a reply to ${name}. Tell me what you want to land.`}
         </p>
-        <ReplyHelper name={name} conversation={conversation} />
+        <ReplyHelper name={name} conversation={conversation} safety={safety} />
         {/* Second back at the END, after the drafts, so a scrolled-down user can
             leave without scrolling up. Same behaviour as the top back. */}
         <button
@@ -3588,11 +3590,15 @@ function WhereItStands({
   conversation,
   nickname,
   flagged,
+  safety,
   onReply,
 }: {
   conversation: string;
   nickname: string;
   flagged: boolean;
+  /** FLAG-59: safety-flagged read → reply stays offered but as the QUIETER, secondary
+   *  option with an honest framing line; the drafts bias firm (ReplyHelper safety). */
+  safety?: boolean;
   onReply: (() => void) | null;
 }) {
   const last = lastMessages(conversation, 3);
@@ -3609,10 +3615,19 @@ function WhereItStands({
       {onReply && (
         <div className={styles.wsCta}>
           <p className={styles.wsReplyLine}>
-            Want help responding to that? I&rsquo;ll draft a few ways to reply &mdash; clear, in your
-            voice{flagged ? ", no pressure to be nice if you don't want to be" : ""}.
+            {safety ? (
+              <>You don&rsquo;t owe them a reply &mdash; if you want to respond, I&rsquo;ll help you say it clearly.</>
+            ) : (
+              <>
+                Want help responding to that? I&rsquo;ll draft a few ways to reply &mdash; clear, in your
+                voice{flagged ? ", no pressure to be nice if you don't want to be" : ""}.
+              </>
+            )}
           </p>
-          <button className={styles.wsReplyBtn} onClick={onReply}>
+          <button
+            className={`${styles.wsReplyBtn} ${safety ? styles.wsReplyBtnQuiet : ""}`}
+            onClick={onReply}
+          >
             <span className={styles.wsIc}>✎</span> Help me reply
           </button>
         </div>
@@ -3621,7 +3636,16 @@ function WhereItStands({
   );
 }
 
-function ReplyHelper({ name, conversation }: { name: string; conversation: string }) {
+function ReplyHelper({
+  name,
+  conversation,
+  safety,
+}: {
+  name: string;
+  conversation: string;
+  /** FLAG-59: flagged read → bias the drafts firm / boundary-holding. */
+  safety?: boolean;
+}) {
   const [intent, setIntent] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [error, setError] = useState("");
@@ -3635,7 +3659,7 @@ function ReplyHelper({ name, conversation }: { name: string; conversation: strin
       const res = await fetch("/api/reply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversation: windowForApi(conversation).text, intent, nickname: name }), // FLAG-43
+        body: JSON.stringify({ conversation: windowForApi(conversation).text, intent, nickname: name, safety: safety === true }), // FLAG-43/59
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Couldn't draft a reply.");

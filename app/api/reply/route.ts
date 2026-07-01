@@ -18,6 +18,7 @@ export async function POST(request: Request) {
   const conversation = typeof b.conversation === "string" ? b.conversation : "";
   const intent = typeof b.intent === "string" ? b.intent.trim() : "";
   const nickname = typeof b.nickname === "string" ? b.nickname : "";
+  const safety = b.safety === true; // FLAG-59: bias drafts firm/boundary-holding
 
   // Reply help only exists when the conversation is present right now. If it
   // isn't, the option shouldn't have been offered — never re-solicit it here.
@@ -33,7 +34,7 @@ export async function POST(request: Request) {
 
   try {
     // The conversation is used here only to draft a reply — never stored or logged.
-    const drafts = await draftReplies({ conversation, intent, nickname });
+    const drafts = await draftReplies({ conversation, intent, nickname, safety });
     if (drafts.length === 0) {
       return NextResponse.json(
         { error: "I couldn't draft a reply just now. Please try again." },
