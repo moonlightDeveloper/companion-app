@@ -20,11 +20,12 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { Intake, Read, ReplyDraft, TranscriptMessage, DeltaChange, MovementNode, ReadMoment } from "@/types";
+import type { Intake, Read, ReplyDraft, TranscriptMessage, DeltaChange, MovementNode, ReadMoment, TimingFeatures } from "@/types";
 import { saveConversation, evictExpired, getConversation, getRecentConversations, deletePersonConversations, pruneOrphanConversations } from "@/lib/localConversations";
 import { detectContinuation } from "@/lib/continuation";
 import { MAX_IMAGES } from "@/lib/cap";
-import { parseWhatsAppExport, type ParsedChat } from "@/lib/whatsapp";
+import { parseWhatsAppExport, whatsappTimestamps, type ParsedChat } from "@/lib/whatsapp";
+import { computeTimingFeatures, timingFromText, timelineFromLabels } from "@/lib/timing";
 import { toScript, type FriendItem } from "@/lib/friendScript";
 import { windowForApi } from "@/lib/window";
 import { decodeStoryHandoff, HANDOFF_PARAM } from "@/lib/introHandoff";
@@ -170,6 +171,9 @@ export default function Story() {
   const [clarifyLoading, setClarifyLoading] = useState(false);
   const bgReadRef = useRef<{ conv: string; promise: Promise<Read> } | null>(null);
   const savedRef = useRef<{ personId?: string; reportId?: string }>({});
+  // FLAG-60: content-free cadence timing for THIS conversation (WhatsApp import only),
+  // attached to the read at save. Cleared per new conversation.
+  const timingRef = useRef<TimingFeatures | null>(null);
   const [regenCount, setRegenCount] = useState(0);
   const [personReports, setPersonReports] = useState<ClientReport[]>([]);
   const [pattern, setPattern] = useState<string | null>(null);
@@ -294,6 +298,10 @@ export default function Story() {
           if (extractAbortRef.current !== ctrl) return;
           if (!res.ok) throw new Error(data?.error || "Couldn't read those.");
           const msgs = data.messages as TranscriptMessage[];
+          // FLAG-60: content-free cadence timing from the screenshot's captured per-message
+          // times (converted to relative gaps on-device; the times themselves are dropped).
+          // null when no timestamps were visible → cadence doesn't fire.
+          timingRef.current = computeTimingFeatures(timelineFromLabels(msgs.map((m) => m.time)));
           if (data.needsCheck) {
             // Verification waits until the transcript is consumed (clarify).
             setReviewMessages(msgs);
@@ -436,6 +444,9 @@ export default function Story() {
             ...read,
             ...(deltaChanges.length > 0 ? { delta: deltaChanges } : {}),
             ...(movementNodes && movementNodes.length >= 2 ? { movement: movementNodes } : {}),
+            // FLAG-60: content-free cadence timing (WhatsApp import only) → persisted; the
+            // save guard keeps it, /summary composes the cadence flavour across reports.
+            ...(timingRef.current ? { timing: timingRef.current } : {}),
           },
           name: answers.name,
           email,
@@ -892,12 +903,16 @@ export default function Story() {
               name={name}
               value={answers.conversation}
               initialMode={pasteTextMode ? "text" : undefined}
-              onText={(v) => {
+              onText={(v, timing) => {
                 // New read → fresh save (don't update a previous report) + reset regens.
                 savedRef.current = {};
                 setRegenCount(0);
                 setExtractStatus("idle"); // paste-text: no extraction to wait on
                 setReviewMessages(null);
+                // FLAG-60: content-free cadence timing. WhatsApp passes it explicitly
+                // (full dates); a plain paste passes nothing → parse inline time labels
+                // from the text here. Either can be null (no usable times → no cadence).
+                timingRef.current = timing !== undefined ? timing : timingFromText(v);
                 setAnswers((a) => ({ ...a, conversation: v }));
                 // Safe-B-lite: start generating the read now, in the background.
                 startBgRead(v, { ...answers, conversation: v });
@@ -1581,7 +1596,7 @@ function Paste({
   name: string;
   value: string;
   initialMode?: Mode;
-  onText: (v: string) => void;
+  onText: (v: string, timing?: TimingFeatures | null) => void;
   onImages: (images: ShotImage[]) => void;
 }) {
   const { display, done } = useTypewriter("Show me the conversation.");
@@ -1752,13 +1767,16 @@ function WhatsAppImport({
   onBack,
 }: {
   name: string;
-  onText: (v: string) => void;
+  onText: (v: string, timing?: TimingFeatures | null) => void;
   onBack: () => void;
 }) {
   const [platform, setPlatform] = useState<"ios" | "android">("ios");
   const [parsed, setParsed] = useState<ParsedChat | null>(null);
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  // FLAG-60: the raw export text, kept on-device only to derive content-free cadence
+  // timing (times → gaps) at sender-mapping time. Never sent.
+  const rawRef = useRef("");
 
   useEffect(() => {
     if (typeof navigator !== "undefined" && /android/i.test(navigator.userAgent)) {
@@ -1814,6 +1832,7 @@ function WhatsAppImport({
       );
       return;
     }
+    rawRef.current = raw; // FLAG-60: kept on-device for cadence timing only
     setParsed(chat);
   }, []);
 
@@ -1824,7 +1843,10 @@ function WhatsAppImport({
     const text = parsed.messages
       .map((m) => `${m.sender === you ? "You" : name}: ${m.text}`)
       .join("\n");
-    onText(text);
+    // FLAG-60: derive content-free timing (message TIMES → gaps) on-device; null when the
+    // export has no usable timestamps. Only these derived numbers are sent, never times.
+    const timing = computeTimingFeatures(whatsappTimestamps(rawRef.current));
+    onText(text, timing);
   };
 
   return (

@@ -32,7 +32,8 @@ function systemPrompt(nickname: string): string {
     "",
     "CONFIDENCE: also report how reliable this extraction is. confidence.level is \"low\" ONLY when extraction is clearly unreliable: unreadable/blurry/cropped text, you genuinely can't tell which side sent messages, the image isn't a chat at all, or the conversation is visibly cut off / structure dropped. Otherwise \"high\". Default to \"high\"; do NOT cry low for minor wording doubt. confidence.issues: a short list of concrete problems (empty array when high).",
     "",
-    "Return the result by calling the emit_transcript tool — messages (each { speaker, text }), notAChat, and confidence { level, issues }. Do NOT write any prose, reasoning, or code fences; just call the tool.",
+    "TIMESTAMPS (cadence only): if a message shows a visible time (e.g. \"10:42\", \"Yesterday 3:15 PM\", a day header like \"Monday\"), put it in that message's `time` field — verbatim, short. Omit when none is shown. It is NEVER part of `text` and never a speaker. It's used on-device to gauge reply timing, then discarded.",
+    "Return the result by calling the emit_transcript tool — messages (each { speaker, text, time? }), notAChat, and confidence { level, issues }. Do NOT write any prose, reasoning, or code fences; just call the tool.",
   ].join("\n");
 }
 
@@ -57,6 +58,11 @@ function transcriptTool(nickname: string): Anthropic.Tool {
             properties: {
               speaker: { type: "string", description: `"You" or "${nickname}"` },
               text: { type: "string" },
+              time: {
+                type: "string",
+                description:
+                  "The visible timestamp on THIS message if shown (e.g. \"10:42\", \"Yesterday 3:15 PM\", \"Mon 09:00\"); omit if none is visible. Used only to gauge reply cadence — never put it in text.",
+              },
             },
             required: ["speaker", "text"],
           },
@@ -144,7 +150,10 @@ function shapeGuard(raw: unknown, nickname: string): Transcript {
       // Anything that isn't exactly "You" is normalised to the nickname so a
       // stray real name can never leak through.
       const speaker = r.speaker === "You" ? "You" : nickname;
-      return { speaker, text };
+      // FLAG-60: the visible timestamp, capped short — used only on-device for cadence
+      // gaps, then dropped (never stored). Absent when the model saw no time.
+      const time = typeof r.time === "string" && r.time.trim() ? r.time.trim().slice(0, 24) : undefined;
+      return time ? { speaker, text, time } : { speaker, text };
     })
     .filter((m) => m.text.length > 0);
 

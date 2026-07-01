@@ -1,5 +1,6 @@
-import type { AxisInstance, AxisLean, CanonicalAxis } from "@/types";
+import type { AxisInstance, AxisLean, CanonicalAxis, TimingFeatures } from "@/types";
 import { LATER_TIMEPOINT_MIN_INTERVAL } from "./recurrence";
+import { deriveCadence, type CadenceFlavour } from "./timing";
 
 /**
  * FLAG-57 pattern engine (the returning card's pattern line). ONE composed sentence:
@@ -24,7 +25,9 @@ export const MEANINGFUL_SHIFT = 0.5;
 const ONE_SIDED_MAX = -0.5;
 
 export type Trajectory = "stuck" | "warming" | "cooling";
-export type PatternFlavour = "escalation" | "one_sided" | null;
+// One composed flavour, single strongest-supported: escalation (safety) > cadence
+// (ghosting/slow-fade/breadcrumbing/hot-cold, FLAG-60) > one-sided.
+export type PatternFlavour = "escalation" | "one_sided" | NonNullable<CadenceFlavour> | null;
 
 export interface PatternResult {
   /** The composed sentence, or null when below the evidence bar (→ teaser). */
@@ -39,6 +42,8 @@ export interface PatternResult {
 export interface ReportLite {
   createdAt: number; // ms epoch
   instances: AxisInstance[];
+  /** FLAG-60: content-free timing summary (WhatsApp reads only; absent otherwise). */
+  timing?: TimingFeatures | null;
 }
 
 const LEAN_SCORE: Record<AxisLean, number> = { healthy: 1, leaning: 0, off: -1, uncertain: 0 };
@@ -92,7 +97,17 @@ export function computePatternLine(reports: ReportLite[], nickname: string): Pat
     .filter((x): x is number => x !== undefined);
   const oneSided = efSeries.length >= 2 && efSeries.every((v) => v <= ONE_SIDED_MAX);
 
-  const flavour: PatternFlavour = escalation ? "escalation" : oneSided ? "one_sided" : null;
+  // FLAG-60: cadence flavour from the per-report timing series (oldest→newest). Escalation
+  // (safety) ALWAYS wins — ghosting that co-occurs with worsening boundary_response defers
+  // to the FLAG-59 safety voice. Priority: escalation > cadence > one-sided.
+  const cadence = escalation ? null : deriveCadence(sorted.map((r) => r.timing));
+  const flavour: PatternFlavour = escalation
+    ? "escalation"
+    : cadence
+      ? cadence
+      : oneSided
+        ? "one_sided"
+        : null;
   const safetyRaise = flavour === "escalation";
 
   return {
@@ -113,6 +128,16 @@ function compose(t: Trajectory, f: PatternFlavour, span: number, nickname: strin
     return `This is escalating — ${nickname} keeps pushing further past your limits, read after read. That's worth taking seriously, not explaining away.`;
   }
   const weeks = Math.max(2, Math.round(span / WEEK));
+  // FLAG-60: a cadence flavour composes onto the trajectory as ONE calm sentence
+  // (ghosting stays non-dramatic). Never two badges.
+  if (f === "ghosting" || f === "slow_fade" || f === "breadcrumbing" || f === "hot_cold") {
+    const lead =
+      t === "warming" ? "It's warming" : t === "cooling" ? "It's cooling" : `${weeks} weeks in, same read`;
+    if (f === "ghosting") return `${lead} — and lately they've gone quiet.`;
+    if (f === "slow_fade") return `${lead} — the replies keep stretching out.`;
+    if (f === "breadcrumbing") return `${lead} — a little contact, then quiet again, on repeat.`;
+    return `${lead} — warm, then distant, then warm.`; // hot_cold
+  }
   if (t === "warming") {
     return f === "one_sided"
       ? "It's moving your way — though it's still mostly you carrying it."

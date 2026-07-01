@@ -64,6 +64,25 @@ export interface Read {
    *  bubbles snapped to the full real message + real side. Persisted with the report
    *  (like delta/movement) so recall shows the same receipts. */
   receipts?: ReadMoment[];
+  /** FLAG-60: content-free timing metadata for the cadence flavours. Derived ON-DEVICE
+   *  from message TIMESTAMPS ONLY (WhatsApp exports — the only source with real per-message
+   *  times; screenshots/paste have none, so this is absent there). NO message text, NO
+   *  names, NO absolute clock times leave the device — only relative durations + a count.
+   *  Persisted with the report like axisInstances; /summary aggregates it across the
+   *  person's reports to compose the cadence flavour. Forward-only. */
+  timing?: TimingFeatures;
+}
+
+/** FLAG-60: the on-device-derived, content-free timing summary for one conversation. */
+export interface TimingFeatures {
+  /** Message count in the captured conversation. */
+  messages: number;
+  /** First→last message span (ms). */
+  spanMs: number;
+  /** Median inter-message gap (ms). */
+  medianGapMs: number;
+  /** Longest inter-message gap (ms) — a trailing silence surfaces here. */
+  longestGapMs: number;
 }
 
 /** FLAG-56: the CLOSED canonical behavior-axis vocabulary. Server-pinned so the model
@@ -121,6 +140,11 @@ export interface TranscriptMessage {
   /** "You" for the user, or the chosen nickname for the other person. */
   speaker: string;
   text: string;
+  /** FLAG-60: the visible message timestamp string if the screenshot showed one (e.g.
+   *  "10:42", "Yesterday 3:15 PM"). Used ONLY on-device to derive content-free cadence
+   *  gaps, then discarded — never stored (transcriptToText drops it; only relative timing
+   *  features persist). Absent when no timestamp was visible. */
+  time?: string;
 }
 
 /** Extraction confidence — drives the conditional check screen (FLAG-20). */

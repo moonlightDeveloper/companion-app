@@ -41,7 +41,7 @@ export async function GET(
       const at = new Date(r.created_at).getTime();
       if (tagged.length > 0) timesWithInstances.push(at);
       instances.push(...tagged);
-      lites.push({ createdAt: at, instances: tagged });
+      lites.push({ createdAt: at, instances: tagged, timing: r.result.timing ?? null }); // FLAG-60
     }
     // A real interval — not just "≥2 reports": two reports filed the same afternoon
     // must NOT let the over-time pattern line fire.
