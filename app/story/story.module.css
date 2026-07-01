@@ -1693,3 +1693,35 @@
   box-shadow: none;
 }
 .wsIc { font-size: 17px; }
+
+/* FLAG-65: title-screen intro — a blank paper screen with ONE centered sentence, held then
+   faded to reveal the (untouched) read. Fraunces + existing tokens; no new colors. Motion
+   only; never renders under prefers-reduced-motion (gated in ReadScreen). */
+.titleScreen {
+  min-height: 62vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 8px;
+  opacity: 1;
+  transition: opacity 1.1s ease;
+}
+.titleGone {
+  opacity: 0;
+}
+.titleLine {
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(27px, 7vw, 38px);
+  line-height: 1.22;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  text-align: center;
+  max-width: 20ch;
+  opacity: 0;
+  animation: titleIn 0.9s ease 0.15s forwards;
+}
+@keyframes titleIn {
+  to {
+    opacity: 1;
+  }
+}
