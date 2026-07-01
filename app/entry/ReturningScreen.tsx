@@ -9,9 +9,9 @@ import { topRows } from "@/lib/axisCopy";
 import type { Person } from "@/lib/db";
 import styles from "./ReturningScreen.module.css";
 
-// TODO(entry-router): point at the FLAG-47 email-code recovery flow when the `/` router
-// lands; for now "recover / start fresh" just enters the story.
-const RECOVER_HREF = "/story";
+// FLAG-64: the FLAG-47 email-code recovery entry (the `/` router has landed). Was bare
+// "/story", which the FLAG-58 redirect bounced back to `/` — a silent no-op.
+const RECOVER_HREF = "/story?recover=1";
 
 function ago(days: number): string {
   if (days <= 0) return "today";
@@ -135,7 +135,9 @@ export function ReturningScreen() {
         )}
 
         <div className={styles.newcap}>Someone new on your mind?</div>
-        <Link href="/story" className={styles.startbig}>
+        {/* FLAG-64: ?new=1 carries the "someone new" intent — clears the bare-/story
+            redirect AND lands on the fresh new-person intake (not the picker). */}
+        <Link href="/story?new=1" className={styles.startbig}>
           <svg className={styles.ic} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="9" />
             <path d="M12 8v8M8 12h8" />

@@ -590,6 +590,7 @@ export default function Story() {
     const reportParam = qs?.get("report") ?? null; // read-only saved-report view
     const personParam = qs?.get("person") ?? null; // person overview (from the returning card)
     const recoverParam = qs?.get("recover") ?? null; // cross-device recover entry
+    const newParam = qs?.get("new") ?? null; // FLAG-64: "Start a new story" (someone new)
 
     type Me = { signedIn?: boolean; email?: string; hasSoftToken?: boolean };
     const meP: Promise<Me | null> = fetch("/api/me")
@@ -660,6 +661,16 @@ export default function Story() {
     // screens' "Recover your people" link (re-parented off the deleted cover).
     if (recoverParam) {
       setScreen("recover");
+      return;
+    }
+
+    // FLAG-64: ?new= → the returning screen's "Start a new story" (someone new). Skip the
+    // picker and open the fresh new-person intake (name), no person attached. Without this
+    // the button pointed at bare /story, which the FLAG-58 redirect bounced back to `/`.
+    if (newParam) {
+      setPersonId(undefined);
+      setHomeBack(true);
+      setScreen("name");
       return;
     }
 
