@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { INTRO_STEP_TO_FIELD, buildStoryHref } from "@/lib/introHandoff";
+import type { Intake } from "@/types";
 import styles from "./StartScreen.module.css";
 
 /**
@@ -266,8 +268,14 @@ export function StartScreen() {
     if (v) choose(v.length > 42 ? `${v.slice(0, 42)}…` : v);
   }
   function goToStory() {
-    const q = encodeURIComponent(answers.join(" · "));
-    router.push(`/story${answers.length ? `?start=${q}` : ""}`);
+    // FLAG-58b: map the hook answers to structured intake fields (the shared contract),
+    // so /story pre-fills and skips them — never re-parses a display sentence.
+    const values: Partial<Intake> = {};
+    answers.forEach((a, idx) => {
+      const field = INTRO_STEP_TO_FIELD[idx];
+      if (field) values[field] = a;
+    });
+    router.push(buildStoryHref(values));
   }
 
   return (
