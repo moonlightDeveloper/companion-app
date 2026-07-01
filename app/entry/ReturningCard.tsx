@@ -103,9 +103,17 @@ export function ReturningCard({
           <Link href={`/story?person=${encodeURIComponent(model.id)}`} className={`${styles.btn} ${styles.primary}`}>
             Add what&rsquo;s new <span className={styles.arrow}>→</span>
           </Link>
-          <Link href={`/story?person=${encodeURIComponent(model.id)}`} className={`${styles.btn} ${styles.ghost}`}>
-            Open the full read
-          </Link>
+          {/* FLAG-58: opens THIS person's latest saved report in the read-only view
+              (/story?report=<id> → the report screen), never the intake picker. Shown
+              only once /summary supplies the report id. */}
+          {model.latestReportId && (
+            <Link
+              href={`/story?report=${encodeURIComponent(model.latestReportId)}`}
+              className={`${styles.btn} ${styles.ghost}`}
+            >
+              Open the full read
+            </Link>
+          )}
         </div>
       )}
     </div>

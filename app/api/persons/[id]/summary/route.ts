@@ -57,6 +57,9 @@ export async function GET(
       laterTimepoint,
       patternLine: pattern.line,
       patternSafety: pattern.safetyRaise,
+      // FLAG-58: the newest report's id (reports are DESC) → the card's "Open the full
+      // read" deep-links to the read-only saved-report view for it.
+      latestReportId: reports[0]?.id ?? null,
     });
   } catch (err) {
     console.error("summary failed:", err instanceof Error ? err.message : "unknown");
@@ -64,4 +67,10 @@ export async function GET(
   }
 }
 
-const EMPTY = { instances: [], laterTimepoint: false, patternLine: null, patternSafety: false };
+const EMPTY = {
+  instances: [],
+  laterTimepoint: false,
+  patternLine: null,
+  patternSafety: false,
+  latestReportId: null,
+};

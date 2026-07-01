@@ -57,11 +57,14 @@ export function ReturningScreen() {
           // FLAG-57: pattern line (deterministic, from /summary — zero model calls).
           const patternLine = typeof summary.patternLine === "string" ? summary.patternLine : undefined;
           const patternSafety = summary.patternSafety === true;
+          // FLAG-58: newest report id for "Open the full read" (read-only view).
+          const latestReportId =
+            typeof summary.latestReportId === "string" ? summary.latestReportId : undefined;
           setCards((cur) =>
             cur
               ? cur.map((c) =>
                   c.id === p.id
-                    ? { ...c, ...(behavior.length ? { behavior } : {}), patternLine, patternSafety }
+                    ? { ...c, ...(behavior.length ? { behavior } : {}), patternLine, patternSafety, latestReportId }
                     : c,
                 )
               : cur,

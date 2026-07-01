@@ -35,6 +35,8 @@ export interface CardModel {
   patternLine?: string;
   /** FLAG-57: escalation → render the line in the calm/supportive (not gamified) voice. */
   patternSafety?: boolean;
+  /** FLAG-58: newest report id → "Open the full read" deep-links to its read-only view. */
+  latestReportId?: string;
 }
 
 function wholeDaysSince(iso: string): number | null {

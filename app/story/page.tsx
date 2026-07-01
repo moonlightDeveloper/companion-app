@@ -178,6 +178,9 @@ export default function Story() {
   const [pattern, setPattern] = useState<string | null>(null);
   const [selectedReport, setSelectedReport] = useState<ClientReport | null>(null);
   const [fromPerson, setFromPerson] = useState(false);
+  // FLAG-58: reached the report screen via a read-only deep-link (?report=) with no
+  // internal history → the top bar offers a home link instead of the in-flow back.
+  const [reportHome, setReportHome] = useState(false);
   // FLAG-23: background upload+extraction. extractStatus drives the calm beat and
   // the failure override; reviewMessages holds a needsCheck verification until the
   // transcript is actually consumed (at clarify).
@@ -574,6 +577,12 @@ export default function Story() {
     const hasHandoff = Object.keys(handoff).length > 0;
     if (hasHandoff) setAnswers((a) => ({ ...a, ...handoff }));
 
+    // FLAG-58: read-only saved-report deep-link (returning card → "Open the full read").
+    const reportParam =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("report")
+        : null;
+
     type Me = { signedIn?: boolean; email?: string; hasSoftToken?: boolean };
     const meP: Promise<Me | null> = fetch("/api/me")
       .then((r) => r.json())
@@ -598,6 +607,27 @@ export default function Story() {
       // is source of truth; no-ops on an empty roster (see pruneOrphanConversations).
       pruneOrphanConversations(persons.map((p) => p.id));
     });
+
+    // FLAG-58: a report deep-link owns the screen — fetch the saved report by id
+    // (ownership-checked server-side) and land straight on the read-only report screen,
+    // never the picker/intake. Missing/not-owned → fall back to normal entry.
+    if (reportParam) {
+      fetch(`/api/reports/${encodeURIComponent(reportParam)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.report) {
+            setAnswers((a) => ({ ...a, name: data.nickname }));
+            setSelectedReport(data.report as ClientReport);
+            setFromPerson(true);
+            setReportHome(true);
+            setScreen("report");
+          } else {
+            setScreen("cover");
+          }
+        })
+        .catch(() => setScreen("cover"));
+      return;
+    }
 
     // Screen lane — decided ONCE. A cold/hung check degrades to first-time after
     // a cap (safe — "treated as new"), never stuck on the splash.
@@ -644,11 +674,15 @@ export default function Story() {
     <div className={`${styles.stage} storyTheme`}>
       <div className={styles.phone}>
         <div className={styles.topbar}>
-          {history.length > 0 && (
+          {history.length > 0 ? (
             <button className={styles.back} aria-label="Back" onClick={back}>
               &#8249;
             </button>
-          )}
+          ) : reportHome ? (
+            <Link className={styles.back} aria-label="Back to home" href="/">
+              &#8249;
+            </Link>
+          ) : null}
           <div className={styles.brand}>
             <div className={styles.eyebrow}>
               {EYEBROW[screen] || "Private story"}
