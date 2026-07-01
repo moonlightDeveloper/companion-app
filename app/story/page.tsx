@@ -2729,6 +2729,27 @@ function ReadScreen({
   onRetry: () => void;
   onReply: () => void;
 }) {
+  // FLAG-65: title-screen intro (motion only). Plays ONLY for a fresh, SIGNIFICANT read —
+  // "fresh" = this is ReadScreen (post-analysis); a recalled read is ReportScreen, which
+  // never mounts this. "Significant" = a concrete finding in the report: safety fired, or a
+  // bar verdict is strongly OFF (tone "low"). Mild/mixed/balanced → no title, read direct.
+  const significant = !!read && (read.safety.flag || read.bars.some((b) => b.tone === "low"));
+  const [titlePhase, setTitlePhase] = useState<"show" | "gone" | "done">("done");
+  const titleStarted = useRef(false);
+  useEffect(() => {
+    // Start when the read ARRIVES (not at the loading beat). Reduced-motion → skip.
+    if (titleStarted.current || !read || !significant) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    titleStarted.current = true;
+    setTitlePhase("show");
+    const t1 = window.setTimeout(() => setTitlePhase("gone"), TITLE.HOLD); // hold → fade
+    const t2 = window.setTimeout(() => setTitlePhase("done"), TITLE.REVEAL); // → read
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [read, significant]);
+
   // FLAG-48: "Help me reply" navigates to the dedicated reply screen (onReply →
   // go("reply")); the read stays mounted underneath and is restored on back.
   if (status === "loading" || status === "idle") {
@@ -2774,6 +2795,21 @@ function ReadScreen({
 
   if (!read) return null;
 
+  // FLAG-65: while the title-screen intro plays, show ONLY the blank title (paper + one
+  // sentence), holding then fading — the read is left completely untouched, revealed after.
+  if (titlePhase === "show" || titlePhase === "gone") {
+    const titleSentence = read.safety.flag
+      ? firstSentence((read.safety.note ?? read.where_this_leaves_you).replace(/[«»]/g, ""))
+      : read.headline.replace(/[«»]/g, "");
+    return (
+      <section className={styles.screen}>
+        <div className={`${styles.titleScreen} ${titlePhase === "gone" ? styles.titleGone : ""}`}>
+          <p className={styles.titleLine}>{titleSentence}</p>
+        </div>
+      </section>
+    );
+  }
+
   // Safety case: show only the supportive note.
   return (
     <section className={styles.screen}>
@@ -2783,7 +2819,9 @@ function ReadScreen({
       {read.safety.flag && <SafetyBanner note={read.safety.note} />}
       {/* FLAG-48: the read is delivered as a friend talking it through. Pure
           presentation — the analysis/conclusions are unchanged (Option A maps the
-          existing Read fields to typed/pop/reveal turns). */}
+          existing Read fields to typed/pop/reveal turns). FLAG-65: when the title-screen
+          intro played (significant read), the read shows plainly (revealNow) — the title
+          WAS the intro; content/styling unchanged. */}
       <FriendRead
         read={read}
         trimmed={trimmed}
@@ -2794,6 +2832,7 @@ function ReadScreen({
         conversation={conversation}
         canReply={!!conversation.trim()}
         onReply={onReply}
+        revealNow={significant && titleStarted.current}
       />
 
       {/* Backstop: catch a confident misread (wrong-side attribution) or enrich
@@ -2865,6 +2904,18 @@ const FRIEND_PUNCT = /[.,;—?!]/;
 // body. toScript always emits those two first, so this index is stable.
 const DELTA_AFTER = 2;
 
+// FLAG-65 title-screen intro (motion only): hold the one-sentence title, then fade it out
+// and reveal the (already-rendered) read underneath. Timing from title-screen-to-report.html.
+const TITLE = { HOLD: 2600, REVEAL: 3400 } as const;
+
+/** First sentence of a string (for the safety title's reassurance essence). */
+function firstSentence(s: string | null | undefined): string {
+  const t = (s ?? "").trim();
+  if (!t) return "";
+  const m = t.match(/^.*?[.!?](?=\s|$)/);
+  return (m ? m[0] : t).trim();
+}
+
 const friendToneColor = (tone: string) =>
   tone === "good" ? "var(--f-good)" : tone === "low" ? "var(--f-concern)" : "var(--f-warm)";
 
@@ -2878,6 +2929,7 @@ function FriendRead({
   conversation,
   canReply,
   onReply,
+  revealNow = false,
 }: {
   read: Read;
   trimmed: boolean;
@@ -2888,21 +2940,26 @@ function FriendRead({
   conversation: string;
   canReply: boolean;
   onReply: () => void;
+  /** FLAG-65: the title-screen intro already ran → skip the typed opening, show the read
+   *  plainly (the title WAS the intro). The read's content/styling is unchanged. */
+  revealNow?: boolean;
 }) {
   const script = useMemo(
     () => toScript(read, { trimmed, nothingNew }),
     [read, trimmed, nothingNew],
   );
-  const [phase, setPhase] = useState<"thinking" | "flow">("thinking");
+  // FLAG-65: revealNow (title-screen already played) → start fully revealed on the FIRST
+  // render, so the read shows plainly with no "thinking"/typing flash.
+  const [phase, setPhase] = useState<"thinking" | "flow">(revealNow ? "flow" : "thinking");
   // `shown` counts the OPENING turns committed (0..DELTA_AFTER). Only the opening is
   // timer-sequenced + typed; everything below renders at once on openingDone and
   // reveals on scroll (RevealTurn / DeltaSection), not on a timer.
-  const [shown, setShown] = useState(0);
+  const [shown, setShown] = useState(revealNow ? DELTA_AFTER : 0);
   const [typing, setTyping] = useState<{ i: number; text: string } | null>(null);
-  const [openingDone, setOpeningDone] = useState(false);
+  const [openingDone, setOpeningDone] = useState(revealNow);
   // revealAll forces the body + delta visible without scrolling — set by "Show it
   // all" and by reduced-motion (which also skips the opening typing).
-  const [revealAll, setRevealAll] = useState(false);
+  const [revealAll, setRevealAll] = useState(revealNow);
 
   const cancelled = useRef(false);
   const timers = useRef<number[]>([]);
@@ -2925,7 +2982,9 @@ function FriendRead({
   // hands off: the rest is rendered and revealed on scroll. Same typing dwell values
   // as the reference file.
   useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    // FLAG-65: revealNow (title-screen intro already played) or reduced-motion → skip the
+    // typed opening and show the read plainly (same content, just no entrance typing).
+    if (revealNow || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       showAll();
       return;
     }
