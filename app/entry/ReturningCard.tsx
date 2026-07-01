@@ -66,19 +66,21 @@ export function ReturningCard({
         </div>
       )}
 
-      {/* pattern — hidden unless enriched (not in the roster). */}
-      {((model.patternDots && model.patternDots.length > 0) || model.patternLine) && (
-        <div className={styles.pattern}>
-          {model.patternDots && model.patternDots.length > 0 && (
-            <div className={styles.weeks} aria-label="pattern by week">
-              {model.patternDots.map((t, i) => (
-                <i key={i} className={dotClass[t]} />
-              ))}
-            </div>
-          )}
-          {model.patternLine && <div className={styles.say}>{model.patternLine}</div>}
+      {/* FLAG-57: the retention hook — the composed pattern line when the evidence bar
+          is met, else the free teaser (never a fabricated trend). Escalation renders in
+          the calm/supportive voice. Dots dropped until a weekly-cadence source exists. */}
+      <div className={`${styles.pattern} ${model.patternSafety ? styles.patternSafety : ""}`}>
+        {model.patternDots && model.patternDots.length > 0 && (
+          <div className={styles.weeks} aria-label="pattern by week">
+            {model.patternDots.map((t, i) => (
+              <i key={i} className={dotClass[t]} />
+            ))}
+          </div>
+        )}
+        <div className={styles.say}>
+          {model.patternLine || "Add what’s new and I’ll show you how it’s really moving."}
         </div>
-      )}
+      </div>
 
       {confirming ? (
         <div className={styles.confirm}>

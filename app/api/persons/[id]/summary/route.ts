@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { listReports } from "@/lib/db";
 import { LATER_TIMEPOINT_MIN_INTERVAL } from "@/lib/recurrence";
+import { computePatternLine, type ReportLite } from "@/lib/patternLine";
 import type { AxisInstance } from "@/types";
 
 export const runtime = "nodejs";
@@ -23,20 +24,24 @@ const AXES = new Set<string>([
  * NOT reimplemented here (reuse lib/recurrence.ts).
  */
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const userId = await getUserId();
-  if (!userId) return NextResponse.json({ instances: [], laterTimepoint: false });
+  if (!userId) return NextResponse.json(EMPTY);
   const { id } = await params;
+  const nickname = new URL(req.url).searchParams.get("nickname") || "them";
   try {
     const reports = await listReports(userId, id); // ownership-checked, newest first
     const instances: AxisInstance[] = [];
     const timesWithInstances: number[] = [];
+    const lites: ReportLite[] = [];
     for (const r of reports) {
       const tagged = (r.result.axisInstances ?? []).filter((a) => AXES.has(a.axis) && !!a.ref);
-      if (tagged.length > 0) timesWithInstances.push(new Date(r.created_at).getTime());
+      const at = new Date(r.created_at).getTime();
+      if (tagged.length > 0) timesWithInstances.push(at);
       instances.push(...tagged);
+      lites.push({ createdAt: at, instances: tagged });
     }
     // A real interval — not just "≥2 reports": two reports filed the same afternoon
     // must NOT let the over-time pattern line fire.
@@ -44,9 +49,19 @@ export async function GET(
       timesWithInstances.length >= 2 &&
       Math.max(...timesWithInstances) - Math.min(...timesWithInstances) >=
         LATER_TIMEPOINT_MIN_INTERVAL;
-    return NextResponse.json({ instances, laterTimepoint });
+    // FLAG-57: the pattern line — DETERMINISTIC (no model call), computed from the
+    // persisted per-report verdicts + timestamps. null below the evidence bar → teaser.
+    const pattern = computePatternLine(lites, nickname);
+    return NextResponse.json({
+      instances,
+      laterTimepoint,
+      patternLine: pattern.line,
+      patternSafety: pattern.safetyRaise,
+    });
   } catch (err) {
     console.error("summary failed:", err instanceof Error ? err.message : "unknown");
-    return NextResponse.json({ instances: [], laterTimepoint: false });
+    return NextResponse.json(EMPTY);
   }
 }
+
+const EMPTY = { instances: [], laterTimepoint: false, patternLine: null, patternSafety: false };

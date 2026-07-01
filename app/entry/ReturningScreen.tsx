@@ -46,14 +46,26 @@ export function ReturningScreen() {
       // /summary only (aggregates stored instances; no model call).
       await Promise.all(
         persons.map(async (p) => {
-          const summary = await fetch(`/api/persons/${p.id}/summary`)
+          const summary = await fetch(
+            `/api/persons/${p.id}/summary?nickname=${encodeURIComponent(p.nickname)}`,
+          )
             .then((r) => r.json())
-            .catch(() => ({ instances: [] }));
+            .catch(() => ({}));
           if (cancelled) return;
           // Rank by significance + cap at 3 (boundary + off-tone over neutral).
           const behavior = topRows(deriveAxisVerdicts((summary.instances ?? []) as AxisInstance[]));
-          if (behavior.length === 0) return;
-          setCards((cur) => (cur ? cur.map((c) => (c.id === p.id ? { ...c, behavior } : c)) : cur));
+          // FLAG-57: pattern line (deterministic, from /summary — zero model calls).
+          const patternLine = typeof summary.patternLine === "string" ? summary.patternLine : undefined;
+          const patternSafety = summary.patternSafety === true;
+          setCards((cur) =>
+            cur
+              ? cur.map((c) =>
+                  c.id === p.id
+                    ? { ...c, ...(behavior.length ? { behavior } : {}), patternLine, patternSafety }
+                    : c,
+                )
+              : cur,
+          );
         }),
       );
     })();
