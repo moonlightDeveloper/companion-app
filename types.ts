@@ -140,6 +140,11 @@ export interface TranscriptMessage {
   /** "You" for the user, or the chosen nickname for the other person. */
   speaker: string;
   text: string;
+  /** FLAG-60: the visible message timestamp string if the screenshot showed one (e.g.
+   *  "10:42", "Yesterday 3:15 PM"). Used ONLY on-device to derive content-free cadence
+   *  gaps, then discarded — never stored (transcriptToText drops it; only relative timing
+   *  features persist). Absent when no timestamp was visible. */
+  time?: string;
 }
 
 /** Extraction confidence — drives the conditional check screen (FLAG-20). */

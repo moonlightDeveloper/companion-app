@@ -25,7 +25,7 @@ import { saveConversation, evictExpired, getConversation, getRecentConversations
 import { detectContinuation } from "@/lib/continuation";
 import { MAX_IMAGES } from "@/lib/cap";
 import { parseWhatsAppExport, whatsappTimestamps, type ParsedChat } from "@/lib/whatsapp";
-import { computeTimingFeatures } from "@/lib/timing";
+import { computeTimingFeatures, timingFromText, timelineFromLabels } from "@/lib/timing";
 import { toScript, type FriendItem } from "@/lib/friendScript";
 import { windowForApi } from "@/lib/window";
 import { decodeStoryHandoff, HANDOFF_PARAM } from "@/lib/introHandoff";
@@ -298,6 +298,10 @@ export default function Story() {
           if (extractAbortRef.current !== ctrl) return;
           if (!res.ok) throw new Error(data?.error || "Couldn't read those.");
           const msgs = data.messages as TranscriptMessage[];
+          // FLAG-60: content-free cadence timing from the screenshot's captured per-message
+          // times (converted to relative gaps on-device; the times themselves are dropped).
+          // null when no timestamps were visible → cadence doesn't fire.
+          timingRef.current = computeTimingFeatures(timelineFromLabels(msgs.map((m) => m.time)));
           if (data.needsCheck) {
             // Verification waits until the transcript is consumed (clarify).
             setReviewMessages(msgs);
@@ -905,9 +909,10 @@ export default function Story() {
                 setRegenCount(0);
                 setExtractStatus("idle"); // paste-text: no extraction to wait on
                 setReviewMessages(null);
-                // FLAG-60: content-free cadence timing (WhatsApp import only; undefined
-                // for typed/screenshot paste), persisted with the read at save.
-                timingRef.current = timing ?? null;
+                // FLAG-60: content-free cadence timing. WhatsApp passes it explicitly
+                // (full dates); a plain paste passes nothing → parse inline time labels
+                // from the text here. Either can be null (no usable times → no cadence).
+                timingRef.current = timing !== undefined ? timing : timingFromText(v);
                 setAnswers((a) => ({ ...a, conversation: v }));
                 // Safe-B-lite: start generating the read now, in the background.
                 startBgRead(v, { ...answers, conversation: v });

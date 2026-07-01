@@ -52,6 +52,61 @@ export function computeTimingFeatures(timestampsMs: number[]): TimingFeatures | 
   };
 }
 
+/** Clock reading → minutes since midnight, or null. 24h and 12h (am/pm). Only the clock
+ *  is read — nothing else about the label is used or kept (content-free). */
+export function timeOfDayMinutes(label: string): number | null {
+  const m = label.match(/\b(\d{1,2}):(\d{2})\s*([AaPp])\.?[Mm]?\.?|\b(\d{1,2}):(\d{2})\b/);
+  if (!m) return null;
+  let hh = m[1] !== undefined ? +m[1] : +m[4];
+  const mm = m[2] !== undefined ? +m[2] : +m[5];
+  if (!Number.isFinite(hh) || !Number.isFinite(mm) || hh > 23 || mm > 59) return null;
+  const ap = m[3]?.toLowerCase();
+  if (ap === "p" && hh < 12) hh += 12;
+  if (ap === "a" && hh === 12) hh = 0;
+  return hh * 60 + mm;
+}
+
+// Relative day-advance markers (chat UIs show these between runs). Deliberately NOT full
+// dates — those appear per-line in a pasted WhatsApp export and would over-advance.
+const DAY_MARKER =
+  /\b(yesterday|today|mon(day)?|tue(sday)?|wed(nesday)?|thu(rsday)?|fri(day)?|sat(urday)?|sun(day)?)\b/i;
+
+/**
+ * Reconstruct a RELATIVE ms timeline from per-line/-message time labels (paste + screenshot
+ * inputs, which carry time-of-day, not full dates). Only clock readings are used; a backward
+ * time jump — or an explicit relative day marker ("Yesterday"/weekday) — advances the day.
+ * Lines with no readable time can't anchor a gap and are skipped (a lone marker still
+ * advances the next). Returns relative ms offsets (absolute epoch is irrelevant to gaps).
+ */
+export function timelineFromLabels(labels: (string | null | undefined)[]): number[] {
+  const out: number[] = [];
+  let day = 0;
+  let prevMin = -1;
+  let pendingAdvance = false;
+  for (const label of labels) {
+    if (!label) continue;
+    const marker = DAY_MARKER.test(label);
+    const min = timeOfDayMinutes(label);
+    if (min === null) {
+      if (marker) pendingAdvance = true; // a standalone "Yesterday"/weekday separator line
+      continue;
+    }
+    if (prevMin >= 0) {
+      if (marker || pendingAdvance || min < prevMin) day += 1;
+    }
+    pendingAdvance = false;
+    prevMin = min;
+    out.push((day * 1440 + min) * 60_000);
+  }
+  return out;
+}
+
+/** Timing from a pasted/typed conversation: parse each LINE's clock label → relative
+ *  timeline → features. Null when no times are present (→ cadence doesn't fire). */
+export function timingFromText(text: string): TimingFeatures | null {
+  return computeTimingFeatures(timelineFromLabels(text.split("\n")));
+}
+
 export type CadenceFlavour = "ghosting" | "slow_fade" | "breadcrumbing" | "hot_cold" | null;
 
 /** Mostly-rising: more up-steps than down-steps, and the last exceeds the first. */
