@@ -51,73 +51,80 @@ export function ReturningCard({
         )}
       </div>
 
-      {/* behavior rows — hidden unless enriched (not in the roster). Ranked + capped to
-          3 by the caller (topRows); slice here is a defensive backstop so the card can
-          never grow past 3. */}
-      {model.behavior && model.behavior.length > 0 && (
-        <div className={styles.reads}>
-          {model.behavior.slice(0, 3).map((r, i) => (
-            <div key={i} className={styles.read}>
-              <span className={`${styles.dot} ${dotClass[r.tone]}`} />
-              <span className={styles.k}>{r.label}</span>
-              <span className={styles.v}>{r.value}</span>
+      {/* The card BODY (behavior rows + pattern + actions). On delete-confirm it dims to
+          non-interactive and a centered overlay veils it edge-to-edge; the header above
+          stays fully clear. The body content keeps its own padding (cardBody) while the
+          veil reaches the card edges (overlay inset:0 over the padding-less bodyWrap). */}
+      <div className={styles.bodyWrap}>
+        <div className={`${styles.cardBody} ${confirming ? styles.bodyDim : ""}`}>
+          {/* behavior rows — hidden unless enriched (not in the roster). Ranked + capped to
+              3 by the caller (topRows); slice here is a defensive backstop so the card can
+              never grow past 3. */}
+          {model.behavior && model.behavior.length > 0 && (
+            <div className={styles.reads}>
+              {model.behavior.slice(0, 3).map((r, i) => (
+                <div key={i} className={styles.read}>
+                  <span className={`${styles.dot} ${dotClass[r.tone]}`} />
+                  <span className={styles.k}>{r.label}</span>
+                  <span className={styles.v}>{r.value}</span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+          )}
 
-      {/* FLAG-57: the retention hook — the composed pattern line when the evidence bar
-          is met, else the free teaser (never a fabricated trend). Escalation renders in
-          the calm/supportive voice. Dots dropped until a weekly-cadence source exists. */}
-      <div className={`${styles.pattern} ${model.patternSafety ? styles.patternSafety : ""}`}>
-        {model.patternDots && model.patternDots.length > 0 && (
-          <div className={styles.weeks} aria-label="pattern by week">
-            {model.patternDots.map((t, i) => (
-              <i key={i} className={dotClass[t]} />
-            ))}
+          {/* FLAG-57: the retention hook — the composed pattern line when the evidence bar
+              is met, else the free teaser (never a fabricated trend). Escalation renders in
+              the calm/supportive voice. Dots dropped until a weekly-cadence source exists. */}
+          <div className={`${styles.pattern} ${model.patternSafety ? styles.patternSafety : ""}`}>
+            {model.patternDots && model.patternDots.length > 0 && (
+              <div className={styles.weeks} aria-label="pattern by week">
+                {model.patternDots.map((t, i) => (
+                  <i key={i} className={dotClass[t]} />
+                ))}
+              </div>
+            )}
+            <div className={styles.say}>
+              {model.patternLine || "Add what’s new and I’ll show you how it’s really moving."}
+            </div>
+          </div>
+
+          <div className={styles.cardActions}>
+            <Link href={`/story?person=${encodeURIComponent(model.id)}`} className={`${styles.btn} ${styles.primary}`}>
+              Add what&rsquo;s new <span className={styles.arrow}>→</span>
+            </Link>
+            {/* FLAG-58: opens THIS person's MOST RECENT saved report (a specific dated
+                read), read-only, via /story?report=<id> — never the intake picker. Labeled
+                honestly: the card describes the person over time and the pattern line the
+                movement; this link is one dated report, not the card's summary. Shown only
+                once /summary supplies the report id. */}
+            {model.latestReportId && (
+              <Link
+                href={`/story?report=${encodeURIComponent(model.latestReportId)}`}
+                className={`${styles.btn} ${styles.ghost}`}
+              >
+                Open your most recent read
+              </Link>
+            )}
+          </div>
+        </div>
+
+        {confirming && (
+          <div className={styles.confirmOverlay}>
+            <div className={styles.ctext}>
+              Delete <b>{model.name}</b>? The read and its timeline go with it &mdash; this
+              can&rsquo;t be undone.
+            </div>
+            <div className={styles.confirmRow}>
+              <button className={`${styles.cbtn} ${styles.cbtnKeep}`} onClick={() => setConfirming(false)}>
+                Keep it
+              </button>
+              <button className={`${styles.cbtn} ${styles.cbtnDelete}`} onClick={onDelete}>
+                Delete
+              </button>
+            </div>
           </div>
         )}
-        <div className={styles.say}>
-          {model.patternLine || "Add what’s new and I’ll show you how it’s really moving."}
-        </div>
       </div>
-
-      {confirming ? (
-        <div className={styles.confirm}>
-          <div className={styles.ctext}>
-            Delete <b>{model.name}</b>? The read
-            {model.weeksIn != null ? ` and its ${model.weeksIn}-week timeline` : " and its timeline"} go
-            with it &mdash; this can&rsquo;t be undone.
-          </div>
-          <div className={styles.cbtns}>
-            <button className={`${styles.btn} ${styles.ghost}`} onClick={() => setConfirming(false)}>
-              Keep it
-            </button>
-            <button className={`${styles.btn} ${styles.danger}`} onClick={onDelete}>
-              Delete
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className={styles.cardActions}>
-          <Link href={`/story?person=${encodeURIComponent(model.id)}`} className={`${styles.btn} ${styles.primary}`}>
-            Add what&rsquo;s new <span className={styles.arrow}>→</span>
-          </Link>
-          {/* FLAG-58: opens THIS person's MOST RECENT saved report (a specific dated
-              read), read-only, via /story?report=<id> — never the intake picker. Labeled
-              honestly: the card describes the person over time and the pattern line the
-              movement; this link is one dated report, not the card's summary. Shown only
-              once /summary supplies the report id. */}
-          {model.latestReportId && (
-            <Link
-              href={`/story?report=${encodeURIComponent(model.latestReportId)}`}
-              className={`${styles.btn} ${styles.ghost}`}
-            >
-              Open your most recent read
-            </Link>
-          )}
-        </div>
-      )}
     </div>
   );
 }
