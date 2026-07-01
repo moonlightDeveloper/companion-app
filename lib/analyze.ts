@@ -13,6 +13,7 @@ import type {
   ReadCard,
   ReadMoment,
   ReadReceiptMsg,
+  TimingFeatures,
 } from "@/types";
 import { SYSTEM_PROMPT, buildUserMessage, type Clarification } from "@/lib/prompt";
 import { modelFor, cachedSystem } from "./models";
@@ -294,7 +295,21 @@ function shapeGuard(raw: unknown): Read {
     ...(movement.length > 0 ? { movement } : {}),
     ...(receipts.length > 0 ? { receipts } : {}),
     ...(axisInstances.length > 0 ? { axisInstances } : {}),
+    ...(guardTiming(obj.timing) ? { timing: guardTiming(obj.timing)! } : {}),
   };
+}
+
+/** FLAG-60: preserve the client-derived, content-free timing summary through the save
+ *  guard — only when all four fields are finite, non-negative numbers (no content ever). */
+function guardTiming(raw: unknown): TimingFeatures | null {
+  const m = isRecord(raw) ? raw : {};
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null);
+  const messages = num(m.messages);
+  const spanMs = num(m.spanMs);
+  const medianGapMs = num(m.medianGapMs);
+  const longestGapMs = num(m.longestGapMs);
+  if (messages === null || spanMs === null || medianGapMs === null || longestGapMs === null) return null;
+  return { messages, spanMs, medianGapMs, longestGapMs };
 }
 
 /** One stored axis instance (final ref form) — null unless it has a valid enum axis,
