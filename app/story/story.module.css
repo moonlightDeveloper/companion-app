@@ -784,6 +784,49 @@
   transform: translateY(6px);
   animation: friendRise 0.7s ease forwards;
 }
+/* Opening-line reveal (motion only) — a held emotional beat before the read arrives, in
+   the SAME space (paper bg + topbar stay). Reuses the read's serif + tokens; no new
+   colors. Fades in, holds, dissolves; then the read reveals beat by beat below. */
+.friendOpening {
+  min-height: 52vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 14px;
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.friendOpenOut {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+.friendOpenLine {
+  font-family: var(--font-newsreader), serif;
+  font-size: 29px;
+  line-height: 1.3;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--f-ink);
+  opacity: 0;
+  transform: translateY(8px);
+  animation: friendRise 0.8s ease 0.2s forwards;
+}
+.friendOpenSub {
+  font-family: var(--font-newsreader), serif;
+  font-size: 21px;
+  line-height: 1.42;
+  color: var(--f-accent);
+  opacity: 0;
+  transform: translateY(8px);
+  animation: friendRise 0.8s ease 1.6s forwards;
+}
+/* Each opening turn fades + rises in (staggered by an inline delay) — replaces the typed
+   entrance. The read body below keeps its own reveal (RevealTurn / friendFill). */
+.friendReveal {
+  opacity: 0;
+  transform: translateY(6px);
+  animation: friendRise 0.7s ease forwards;
+}
 .friendFlow {
   padding-top: 8px;
 }
@@ -1005,8 +1048,12 @@
   .friendActions,
   .deltaCard,
   .friendFill,
+  .friendOpenLine,
+  .friendOpenSub,
+  .friendReveal,
   .revealTurn {
     animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
     opacity: 1 !important;
     transform: none !important;
   }

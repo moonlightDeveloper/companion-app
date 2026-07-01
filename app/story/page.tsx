@@ -2854,16 +2854,22 @@ function ReadBody({ read }: { read: Read }) {
 const SHOW_FIX_BACKSTOP = false;
 
 /* ---------- FLAG-48: "friend talking it through" report delivery ---------- */
-// Exact timings ported from the approved report-friend-final.html.
-const FRIEND = {
-  THINK: 3400, TYPE_PER: 20, SPACE: 10, PUNCT: 120, TYPE_PRE: 300, TYPE_POST: 650,
-  POP: 560, REVEAL: 820,
-} as const;
-const FRIEND_PUNCT = /[.,;—?!]/;
 // FLAG-46: the directional "Since last time" delta renders after the first two
 // script turns (headline + the "reading what they do" subhead) and before the read
 // body. toScript always emits those two first, so this index is stable.
 const DELTA_AFTER = 2;
+
+// Opening-line reveal timing (motion only): the held line's fade-in + hold, then its
+// dissolve. After that, the read reveals beat by beat below (the opening turns stagger).
+const FRIEND_OPEN = { HOLD: 3600, DISSOLVE: 500 } as const;
+
+/** First sentence of a string (for the safety reassurance line on the opening beat). */
+function firstSentence(s: string | null | undefined): string {
+  const t = (s ?? "").trim();
+  if (!t) return "";
+  const m = t.match(/^.*?[.!?](?=\s|$)/);
+  return (m ? m[0] : t).trim();
+}
 
 const friendToneColor = (tone: string) =>
   tone === "good" ? "var(--f-good)" : tone === "low" ? "var(--f-concern)" : "var(--f-warm)";
@@ -2893,37 +2899,36 @@ function FriendRead({
     () => toScript(read, { trimmed, nothingNew }),
     [read, trimmed, nothingNew],
   );
-  const [phase, setPhase] = useState<"thinking" | "flow">("thinking");
-  // `shown` counts the OPENING turns committed (0..DELTA_AFTER). Only the opening is
-  // timer-sequenced + typed; everything below renders at once on openingDone and
-  // reveals on scroll (RevealTurn / DeltaSection), not on a timer.
-  const [shown, setShown] = useState(0);
-  const [typing, setTyping] = useState<{ i: number; text: string } | null>(null);
+  // Opening-line reveal (motion only): "opening" holds the centered line, then "flow"
+  // reveals the read beat by beat. openOut triggers the dissolve before the handoff.
+  const [phase, setPhase] = useState<"opening" | "flow">("opening");
+  const [openOut, setOpenOut] = useState(false);
   const [openingDone, setOpeningDone] = useState(false);
-  // revealAll forces the body + delta visible without scrolling — set by "Show it
-  // all" and by reduced-motion (which also skips the opening typing).
+  // revealAll forces the opening turns + body visible without staggering — set by "Show
+  // it all" and by reduced-motion (which also skips the opening hold).
   const [revealAll, setRevealAll] = useState(false);
+
+  // The held opening line, derived from the read (never hardcoded). Safety-fired reads
+  // carry the reassurance on this first beat; others just the headline/essence.
+  const essence = read.headline.replace(/[«»]/g, "");
+  const reassurance = read.safety.flag
+    ? firstSentence((read.safety.note ?? read.where_this_leaves_you).replace(/[«»]/g, ""))
+    : "";
 
   const cancelled = useRef(false);
   const timers = useRef<number[]>([]);
 
-  // Typing is the opening signature only — the headline + the first "someone's
-  // talking to you" line. The app never scrolls; below the opening, content reveals
-  // (fade/rise) as it enters the viewport. "Show it all" skips the opening typing
-  // AND reveals everything at once.
+  // "Show it all" skips the opening hold and reveals the whole read at once.
   const showAll = useCallback(() => {
     cancelled.current = true;
     timers.current.forEach((t) => clearTimeout(t));
-    setTyping(null);
     setPhase("flow");
-    setShown(DELTA_AFTER);
     setOpeningDone(true);
     setRevealAll(true);
   }, []);
 
-  // The sequencer types ONLY the opening turns (indices 0..DELTA_AFTER-1), then
-  // hands off: the rest is rendered and revealed on scroll. Same typing dwell values
-  // as the reference file.
+  // Sequencer (motion only): the opening line fades in + holds, dissolves, then hands off
+  // to the read reveal. reduced-motion → skip straight to the full read.
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       showAll();
@@ -2936,33 +2941,13 @@ function FriendRead({
         list.push(window.setTimeout(r, ms));
       });
     (async () => {
-      await wait(FRIEND.THINK);
+      await wait(FRIEND_OPEN.HOLD); // opening line fades in + holds (the emotional beat)
+      if (cancelled.current) return;
+      setOpenOut(true); // dissolve
+      await wait(FRIEND_OPEN.DISSOLVE);
       if (cancelled.current) return;
       setPhase("flow");
-      for (let i = 0; i < Math.min(DELTA_AFTER, script.length); i++) {
-        if (cancelled.current) return;
-        const item = script[i];
-        if (item.t === "type") {
-          await wait(FRIEND.TYPE_PRE);
-          if (cancelled.current) return;
-          let acc = "";
-          setTyping({ i, text: "" });
-          for (const ch of item.text) {
-            if (cancelled.current) return;
-            acc += ch;
-            setTyping({ i, text: acc });
-            await wait(ch === " " ? FRIEND.SPACE : FRIEND_PUNCT.test(ch) ? FRIEND.PUNCT : FRIEND.TYPE_PER);
-          }
-          setTyping(null);
-          setShown(i + 1);
-          await wait(FRIEND.TYPE_POST);
-        } else {
-          // The opening is always typed turns; this is a defensive fallthrough.
-          setShown(i + 1);
-          await wait(FRIEND.POP);
-        }
-      }
-      if (!cancelled.current) setOpeningDone(true);
+      setOpeningDone(true); // the read reveals beat by beat below
     })();
     return () => {
       cancelled.current = true;
@@ -2971,40 +2956,29 @@ function FriendRead({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const typingItem = typing ? script[typing.i] : null;
-
   return (
     <div className={styles.friendRoot}>
-      {phase === "thinking" ? (
-        <div className={styles.friendThinking}>
-          <div className={styles.friendThink} style={{ animationDelay: ".1s" }}>
-            Okay — reading it now.
-          </div>
-          <div className={styles.friendThink} style={{ animationDelay: "1.4s" }}>
-            Looking at what they actually do&hellip;
-          </div>
+      {phase === "opening" ? (
+        // The held opening line — same paper/topbar, existing serif + tokens. Fades in,
+        // holds (the emotional beat), then dissolves (openOut) → the read reveals below.
+        <div className={`${styles.friendOpening} ${openOut ? styles.friendOpenOut : ""}`}>
+          <p className={styles.friendOpenLine}>{essence}</p>
+          {reassurance && <p className={styles.friendOpenSub}>{reassurance}</p>}
         </div>
       ) : (
         <div className={styles.friendFlow}>
-          {/* OPENING (typed): script[0] = headline/verdict, script[1] = the "someone's
-              talking to you" line. The only letter-by-letter turns — the signature
-              opening beat. */}
-          {script.slice(0, Math.min(shown, DELTA_AFTER)).map((item, i) => (
-            <FriendTurn key={i} item={item} />
-          ))}
-          {typingItem && typingItem.t === "type" && (
-            <div className={styles.friendTurn}>
-              <p
-                className={`${
-                  typingItem.cls === "small"
-                    ? styles.friendSmall
-                    : `${styles.friendSay} ${typingItem.cls === "accent" ? styles.friendAccent : styles.friendBig}`
-                } ${styles.friendCaret}`}
-              >
-                {typing!.text}
-              </p>
+          {/* OPENING TURNS: the read's first two beats (headline/verdict + subhead) fade +
+              rise in, staggered — the read arriving after the held line dissolved. Same
+              FriendTurn markup/tokens as before; only the entrance timing changed. */}
+          {script.slice(0, DELTA_AFTER).map((item, i) => (
+            <div
+              key={i}
+              className={revealAll ? undefined : styles.friendReveal}
+              style={revealAll ? undefined : { animationDelay: `${i * 0.25}s` }}
+            >
+              <FriendTurn item={item} />
             </div>
-          )}
+          ))}
           {/* Everything below the opening renders at once (openingDone) and reveals on
               SCROLL — no typing past the opening. */}
           {openingDone && (
