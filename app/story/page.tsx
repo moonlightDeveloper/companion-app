@@ -32,7 +32,6 @@ import styles from "./story.module.css";
 
 type Screen =
   | "boot"
-  | "cover"
   | "recover"
   | "welcome"
   | "pick"
@@ -54,7 +53,6 @@ type Screen =
   | "reply";
 
 const FLOW: Screen[] = [
-  "cover",
   "name",
   "origin",
   "situation",
@@ -70,7 +68,6 @@ const FLOW: Screen[] = [
 
 const EYEBROW: Partial<Record<Screen, string>> = {
   boot: "Private story",
-  cover: "Private story",
   recover: "Welcome back",
   read: "What I'm noticing",
 };
@@ -178,9 +175,9 @@ export default function Story() {
   const [pattern, setPattern] = useState<string | null>(null);
   const [selectedReport, setSelectedReport] = useState<ClientReport | null>(null);
   const [fromPerson, setFromPerson] = useState(false);
-  // FLAG-58: reached the report screen via a read-only deep-link (?report=) with no
-  // internal history → the top bar offers a home link instead of the in-flow back.
-  const [reportHome, setReportHome] = useState(false);
+  // FLAG-58: reached a screen via a deep-link (?report= / ?person=) with no internal
+  // history → the top bar offers a home link instead of the in-flow back.
+  const [homeBack, setHomeBack] = useState(false);
   // FLAG-23: background upload+extraction. extractStatus drives the calm beat and
   // the failure override; reviewMessages holds a needsCheck verification until the
   // transcript is actually consumed (at clarify).
@@ -577,11 +574,11 @@ export default function Story() {
     const hasHandoff = Object.keys(handoff).length > 0;
     if (hasHandoff) setAnswers((a) => ({ ...a, ...handoff }));
 
-    // FLAG-58: read-only saved-report deep-link (returning card → "Open the full read").
-    const reportParam =
-      typeof window !== "undefined"
-        ? new URLSearchParams(window.location.search).get("report")
-        : null;
+    // FLAG-58: the deep-link params /story is entered with (bare /story redirects to /).
+    const qs = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+    const reportParam = qs?.get("report") ?? null; // read-only saved-report view
+    const personParam = qs?.get("person") ?? null; // person overview (from the returning card)
+    const recoverParam = qs?.get("recover") ?? null; // cross-device recover entry
 
     type Me = { signedIn?: boolean; email?: string; hasSoftToken?: boolean };
     const meP: Promise<Me | null> = fetch("/api/me")
@@ -619,13 +616,39 @@ export default function Story() {
             setAnswers((a) => ({ ...a, name: data.nickname }));
             setSelectedReport(data.report as ClientReport);
             setFromPerson(true);
-            setReportHome(true);
+            setHomeBack(true);
             setScreen("report");
           } else {
-            setScreen("cover");
+            window.location.replace("/"); // bad/unowned id → the entry router
           }
         })
-        .catch(() => setScreen("cover"));
+        .catch(() => window.location.replace("/"));
+      return;
+    }
+
+    // FLAG-58: ?person= (returning card "Add what's new") → resolve against the roster +
+    // ownership-check, then open the person overview. Invalid/unowned → the entry router
+    // (never cover); a valid, owned person never falls through to /.
+    if (personParam) {
+      personsP.then((persons) => {
+        const p = persons.find((x) => x.id === personParam);
+        if (p) {
+          setPersonId(p.id);
+          setAnswers((a) => ({ ...a, name: p.nickname }));
+          setFromPerson(true);
+          setHomeBack(true);
+          setScreen("person");
+        } else {
+          window.location.replace("/");
+        }
+      });
+      return;
+    }
+
+    // FLAG-58: ?recover= → the cross-device recover entry, launched from the entry
+    // screens' "Recover your people" link (re-parented off the deleted cover).
+    if (recoverParam) {
+      setScreen("recover");
       return;
     }
 
@@ -642,7 +665,9 @@ export default function Story() {
       if (hasHandoff && !me?.signedIn && !me?.hasSoftToken) setScreen("name");
       else if (me?.signedIn) setScreen("pick");
       else if (me?.hasSoftToken) setScreen("welcome");
-      else setScreen("cover");
+      // Unrecognized + no actionable param (e.g. a malformed ?intake=) → the entry
+      // router, never the (deleted) cover. Bare /story is already redirected server-side.
+      else window.location.replace("/");
     });
   }, []);
 
@@ -662,7 +687,7 @@ export default function Story() {
   }, [screen, personId, name]);
 
   const idx = FLOW.indexOf(screen);
-  const progress = (["boot", "cover", "recover", "pick", "person", "history", "report"] as Screen[]).includes(
+  const progress = (["boot", "recover", "pick", "person", "history", "report"] as Screen[]).includes(
     screen,
   )
     ? 0
@@ -678,7 +703,7 @@ export default function Story() {
             <button className={styles.back} aria-label="Back" onClick={back}>
               &#8249;
             </button>
-          ) : reportHome ? (
+          ) : homeBack ? (
             <Link className={styles.back} aria-label="Back to home" href="/">
               &#8249;
             </Link>
@@ -688,7 +713,7 @@ export default function Story() {
               {EYEBROW[screen] || "Private story"}
             </div>
             <div className={styles.title}>
-              {screen === "cover" || screen === "boot" || screen === "recover"
+              {screen === "boot" || screen === "recover"
                 ? "Companion"
                 : `${name}’s story`}
             </div>
@@ -723,17 +748,13 @@ export default function Story() {
           <>
           {screen === "boot" && <Boot />}
 
-          {/* Cover is the first-timer screen only; recognized users are routed to
-              pick/welcome at boot. So Start always begins a new-person read — the
-              roster.length signal (wrong + racy) is gone (FLAG-38). Recover is the
-              tier-3 (no-token) recovery entry — quiet/secondary (FLAG-47). */}
-          {screen === "cover" && (
-            <Cover onStart={() => go("name")} onRecover={() => go("recover")} />
-          )}
-
+          {/* FLAG-58: the /story cover (first-timer hero) is deleted — the front door is
+              the `/` router (StartScreen / ReturningScreen); bare /story redirects there.
+              Recover is the tier-3 (no-token) recovery entry, now launched via ?recover=
+              from the entry screens' "Recover your people" link. */}
           {screen === "recover" && (
             <RecoverScreen
-              onBack={() => go("cover")}
+              onBack={() => window.location.replace("/")}
               onRecovered={async (em) => {
                 // Verified email ownership → session is set. Load the roster ONLY
                 // now (never on email entry alone), then into pick-or-create.
@@ -907,7 +928,12 @@ export default function Story() {
                 setEmail(em);
                 setScreen("pick");
               }}
-              onFresh={() => setScreen("cover")}
+              onFresh={() => {
+                // "Start fresh" → a new read about someone new (the name intake),
+                // never the (deleted) cover.
+                setPersonId(undefined);
+                go("name");
+              }}
             />
           )}
 
@@ -1114,49 +1140,6 @@ function Boot() {
     <section className={styles.screen} style={{ justifyContent: "center" }}>
       <div className={styles.bootSplash}>
         <div className={styles.bootMark}>Companion</div>
-      </div>
-    </section>
-  );
-}
-
-function Cover({ onStart, onRecover }: { onStart: () => void; onRecover: () => void }) {
-  return (
-    <section className={styles.screen}>
-      <div className={styles.hero}>
-        <span className={styles.caseLabel}>
-          No avatar &middot; no dashboard &middot; just the story
-        </span>
-        <p className={styles.punch} style={{ marginTop: 18 }}>
-          You&rsquo;re not their person yet. Right now{" "}
-          <span>you&rsquo;re their option</span> &mdash; let&rsquo;s see which
-          way it&rsquo;s actually moving.
-        </p>
-        <h1>Just had a confusing conversation?</h1>
-        <p>
-          Tell me what&rsquo;s happening, paste the part that matters, and
-          I&rsquo;ll show you what their <b>behavior</b> is really saying &mdash;
-          one question at a time.
-        </p>
-        <button className={styles.primary} onClick={onStart}>
-          Start a story
-        </button>
-        {/* FLAG-47: tier-3 recovery — discoverable but secondary, so it never
-            competes with the primary start path or confuses genuinely-new users. */}
-        <button
-          className={styles.ghost}
-          style={{ display: "block", width: "100%", marginTop: 12 }}
-          onClick={onRecover}
-        >
-          Returning on a new device? Recover your people
-        </button>
-        <div className={styles.noteCard}>
-          <h3>This isn&rsquo;t a chatbot</h3>
-          <p>
-            It asks like a friend who&rsquo;s paying attention, remembers the
-            context, and helps you decide what to do &mdash; then gets out of
-            your way when you&rsquo;ve got your answer.
-          </p>
-        </div>
       </div>
     </section>
   );

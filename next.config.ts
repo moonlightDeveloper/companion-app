@@ -14,6 +14,7 @@ const nextConfig: NextConfig = {
           { type: "query", key: "intake" },
           { type: "query", key: "report" },
           { type: "query", key: "person" },
+          { type: "query", key: "recover" },
         ],
         destination: "/",
         permanent: false,
