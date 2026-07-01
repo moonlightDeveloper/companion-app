@@ -31,7 +31,10 @@ export interface CardModel {
   /** Not in the roster → undefined here; the card hides these until enriched. */
   behavior?: CardBehaviorRow[];
   patternDots?: CardTone[];
+  /** FLAG-57: the composed pattern line (or undefined → the card shows the teaser). */
   patternLine?: string;
+  /** FLAG-57: escalation → render the line in the calm/supportive (not gamified) voice. */
+  patternSafety?: boolean;
 }
 
 function wholeDaysSince(iso: string): number | null {

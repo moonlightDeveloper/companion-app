@@ -237,3 +237,10 @@
   background: #a94d39;
   transform: translateY(-1px);
 }
+
+/* FLAG-57: escalation pattern line — calm/supportive, not the casual italic voice. */
+.patternSafety .say {
+  color: var(--clay);
+  font-style: normal;
+  font-weight: 500;
+}
