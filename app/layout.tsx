@@ -28,6 +28,17 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${inter.variable} ${newsreader.variable}`}>
+      <head>
+        {/* Fraunces + Instrument Sans for the entry screens (StartScreen / ReturningScreen),
+            whose ported CSS references them by literal name. Loaded globally now that the
+            entry router is the front door (FLAG-58); previously in the temp route layouts. */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Instrument+Sans:wght@400;500;600&display=swap"
+          rel="stylesheet"
+        />
+      </head>
       <body>{children}</body>
     </html>
   );
