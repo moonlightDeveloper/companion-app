@@ -120,3 +120,48 @@ export function deriveAxisVerdicts(
   }
   return verdicts;
 }
+
+/** One report's tone for an axis — the majority of that report's instance leans, or
+ *  null if the report has no instance for the axis. leaning/uncertain → amber. */
+function reportAxisTone(instances: AxisInstance[], axis: CanonicalAxis): CardTone | null {
+  const counts: Record<AxisLean, number> = { healthy: 0, leaning: 0, off: 0, uncertain: 0 };
+  let n = 0;
+  for (const i of instances) if (i.axis === axis) { counts[i.lean]++; n++; }
+  if (n === 0) return null;
+  const top = (Object.keys(counts) as AxisLean[]).sort((a, b) => counts[b] - counts[a])[0];
+  return top === "healthy" ? "green" : top === "off" ? "clay" : "amber";
+}
+
+/**
+ * Card behavior verdicts across a person's reports (FLAG-58, "sharpened B"). Starts from
+ * the recurrence gate (pooled), then applies the CROSS-REPORT CONFLICT rule: when the
+ * reports DISAGREE on an axis — one report warm, another off, OR an "off" in a past report
+ * the latest read no longer shows — the card must NOT collapse to a pooled-majority tone
+ * OR the single latest value. It shows the axis as MIXED (amber), keeping the concerning
+ * history visible under a later warm read (e.g. a past boundary crossing stays "has crossed
+ * your line before", never erased by a later stable read, never silently the worst).
+ *
+ * Stable portrait preserved: a single report — or reports that agree — passes through
+ * unchanged. The latest report (by createdAt) anchors "still true now?" vs "before".
+ */
+export function deriveCardVerdicts(
+  reports: { createdAt: number; instances: AxisInstance[] }[],
+  min: number = RECURRENCE_MIN,
+): AxisVerdict[] {
+  const base = deriveAxisVerdicts(reports.flatMap((r) => r.instances), min);
+  if (reports.length < 2) return base; // one report → no cross-report conflict possible
+
+  const latest = [...reports].sort((a, b) => b.createdAt - a.createdAt)[0];
+  return base.map((v) => {
+    if (v.mixed) return v; // already the honest read
+    const tones = reports
+      .map((r) => reportAxisTone(r.instances, v.axis))
+      .filter((t): t is CardTone => t !== null);
+    const hasClay = tones.includes("clay");
+    const hasGreen = tones.includes("green");
+    const latestTone = reportAxisTone(latest.instances, v.axis);
+    // Conflict: reports disagree good-vs-bad, OR a past "off" the latest read no longer shows.
+    const conflict = (hasClay && hasGreen) || (hasClay && latestTone !== "clay");
+    return conflict ? { ...v, tone: "amber", mixed: true } : v;
+  });
+}

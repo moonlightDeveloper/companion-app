@@ -388,7 +388,9 @@ export function StartScreen() {
         </section>
 
         <footer className={styles.foot}>
-          <a className={styles.recover} href="#recover">
+          {/* FLAG-58: launches the cross-device recover flow (re-parented off the deleted
+              /story cover) — the tier-3 email-code recovery entry. */}
+          <a className={styles.recover} href="/story?recover=1">
             Returning? Recover your people
           </a>
         </footer>

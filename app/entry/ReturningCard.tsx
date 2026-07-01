@@ -103,9 +103,19 @@ export function ReturningCard({
           <Link href={`/story?person=${encodeURIComponent(model.id)}`} className={`${styles.btn} ${styles.primary}`}>
             Add what&rsquo;s new <span className={styles.arrow}>→</span>
           </Link>
-          <Link href={`/story?person=${encodeURIComponent(model.id)}`} className={`${styles.btn} ${styles.ghost}`}>
-            Open the full read
-          </Link>
+          {/* FLAG-58: opens THIS person's MOST RECENT saved report (a specific dated
+              read), read-only, via /story?report=<id> — never the intake picker. Labeled
+              honestly: the card describes the person over time and the pattern line the
+              movement; this link is one dated report, not the card's summary. Shown only
+              once /summary supplies the report id. */}
+          {model.latestReportId && (
+            <Link
+              href={`/story?report=${encodeURIComponent(model.latestReportId)}`}
+              className={`${styles.btn} ${styles.ghost}`}
+            >
+              Open your most recent read
+            </Link>
+          )}
         </div>
       )}
     </div>

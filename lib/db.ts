@@ -249,6 +249,27 @@ export async function listReports(
 }
 
 /**
+ * A single saved report by id, WITH its person's nickname — ownership-checked (the join
+ * to persons.user_id makes another user's report unreachable). Backs the read-only
+ * saved-report view (returning card → "Open the full read"). Null when missing/not owned.
+ */
+export async function getReportById(
+  reportId: string,
+  userId: string,
+): Promise<{ id: string; result: Read; created_at: Date; nickname: string } | null> {
+  const sql = getSql();
+  await ensureSchema();
+  const rows = await sql<{ id: string; result: Read; created_at: Date; nickname: string }[]>`
+    SELECT r.id, r.result, r.created_at, p.nickname
+    FROM reports r
+    JOIN persons p ON p.id = r.person_id
+    WHERE r.id = ${reportId} AND p.user_id = ${userId}
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
+}
+
+/**
  * Find or create a user by email and return their UUID id. Email is a unique
  * attribute, never the key (see CLAUDE.md §2.1).
  */
