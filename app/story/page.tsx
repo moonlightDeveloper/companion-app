@@ -27,6 +27,7 @@ import { MAX_IMAGES } from "@/lib/cap";
 import { parseWhatsAppExport, type ParsedChat } from "@/lib/whatsapp";
 import { toScript, type FriendItem } from "@/lib/friendScript";
 import { windowForApi } from "@/lib/window";
+import { decodeStoryHandoff, HANDOFF_PARAM } from "@/lib/introHandoff";
 import styles from "./story.module.css";
 
 type Screen =
@@ -562,6 +563,17 @@ export default function Story() {
   // /api/me is cookie-only server-side (no DB) but still a round-trip; /api/persons
   // adds a Neon query, so we gate on max(me, persons) — both run in parallel.
   useEffect(() => {
+    // FLAG-58b: consume the intro handoff — structured intake values in ?intake=. Read
+    // client-side in this mount effect (SSR-safe: the boot splash renders first, no
+    // hydration mismatch). Pre-fill the mapped fields; the flow skips them (nextUnanswered
+    // + the screen decision below). Malformed/absent → {} → plain flow, unchanged.
+    const handoff =
+      typeof window !== "undefined"
+        ? decodeStoryHandoff(new URLSearchParams(window.location.search).get(HANDOFF_PARAM))
+        : {};
+    const hasHandoff = Object.keys(handoff).length > 0;
+    if (hasHandoff) setAnswers((a) => ({ ...a, ...handoff }));
+
     type Me = { signedIn?: boolean; email?: string; hasSoftToken?: boolean };
     const meP: Promise<Me | null> = fetch("/api/me")
       .then((r) => r.json())
@@ -594,7 +606,11 @@ export default function Story() {
     Promise.race([Promise.all([meP, personsP]).then(([me]) => me), cap]).then((me) => {
       if (decided) return;
       decided = true;
-      if (me?.signedIn) setScreen("pick");
+      // FLAG-58b: a handoff from the intro means a new visitor mid-flow — drop them
+      // straight into the intake (past the answered question), not back onto the cover.
+      // Recognized returning users keep their normal lane.
+      if (hasHandoff && !me?.signedIn && !me?.hasSoftToken) setScreen("name");
+      else if (me?.signedIn) setScreen("pick");
       else if (me?.hasSoftToken) setScreen("welcome");
       else setScreen("cover");
     });
@@ -805,8 +821,9 @@ export default function Story() {
               options={OPTIONS[screen]}
               onPick={(v) => {
                 setAnswers((a) => ({ ...a, [screen]: v }));
-                // Signed-in users skip the in-flow email/code step.
-                go(screen === "feeling" && signedIn ? "clarify" : nextOf(screen));
+                // Signed-in users skip the in-flow email/code step. FLAG-58b: skip any
+                // intake question the intro handoff already answered (never re-ask).
+                go(screen === "feeling" && signedIn ? "clarify" : nextUnanswered(screen, answers));
               }}
             />
           )}
@@ -983,6 +1000,32 @@ function nextOf(screen: Screen): Screen {
     default:
       return "read";
   }
+}
+
+/** FLAG-58b: intake-question screens ↔ their Intake field, for the handoff-skip. */
+const QUESTION_FIELD: Partial<Record<Screen, keyof Intake>> = {
+  name: "name",
+  origin: "origin",
+  situation: "situation",
+  issue: "issue",
+  met: "met",
+  plans: "plans",
+  feeling: "feeling",
+};
+
+/**
+ * FLAG-58b: nextOf, but skipping forward over intake questions that are ALREADY answered
+ * (e.g. pre-filled by the intro handoff) so they're never re-asked. A non-question screen
+ * (reflection/paste/…) ends the skip. With no pre-filled fields this is just nextOf.
+ */
+function nextUnanswered(screen: Screen, answers: Intake): Screen {
+  let next = nextOf(screen);
+  for (let guard = 0; guard < 10; guard++) {
+    const field = QUESTION_FIELD[next];
+    if (field && answers[field] && answers[field].trim()) next = nextOf(next);
+    else break;
+  }
+  return next;
 }
 
 /* ---------- typewriter ---------- */
