@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import type { CardModel, CardTone } from "@/lib/cardModel";
 import { firstReadLabel } from "@/lib/cardModel";
@@ -25,6 +26,7 @@ export function ReturningCard({
   onDelete?: () => void;
 }) {
   const meta = firstReadLabel(model.firstReadDaysAgo);
+  const [confirming, setConfirming] = useState(false);
   return (
     <div className={styles.card}>
       <div className={styles.cardHead}>
@@ -36,8 +38,8 @@ export function ReturningCard({
         {model.weeksIn != null && (
           <div className={styles.since}>{model.weeksIn} weeks in</div>
         )}
-        {onDelete && (
-          <button className={styles.trash} aria-label={`Delete ${model.name}`} onClick={onDelete}>
+        {onDelete && !confirming && (
+          <button className={styles.trash} aria-label={`Delete ${model.name}`} onClick={() => setConfirming(true)}>
             <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 6h18" />
               <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
@@ -76,14 +78,32 @@ export function ReturningCard({
         </div>
       )}
 
-      <div className={styles.cardActions}>
-        <Link href={`/story?person=${encodeURIComponent(model.id)}`} className={`${styles.btn} ${styles.primary}`}>
-          Add what&rsquo;s new <span className={styles.arrow}>→</span>
-        </Link>
-        <Link href={`/story?person=${encodeURIComponent(model.id)}`} className={`${styles.btn} ${styles.ghost}`}>
-          Open the full read
-        </Link>
-      </div>
+      {confirming ? (
+        <div className={styles.confirm}>
+          <div className={styles.ctext}>
+            Delete <b>{model.name}</b>? The read
+            {model.weeksIn != null ? ` and its ${model.weeksIn}-week timeline` : " and its timeline"} go
+            with it &mdash; this can&rsquo;t be undone.
+          </div>
+          <div className={styles.cbtns}>
+            <button className={`${styles.btn} ${styles.ghost}`} onClick={() => setConfirming(false)}>
+              Keep it
+            </button>
+            <button className={`${styles.btn} ${styles.danger}`} onClick={onDelete}>
+              Delete
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className={styles.cardActions}>
+          <Link href={`/story?person=${encodeURIComponent(model.id)}`} className={`${styles.btn} ${styles.primary}`}>
+            Add what&rsquo;s new <span className={styles.arrow}>→</span>
+          </Link>
+          <Link href={`/story?person=${encodeURIComponent(model.id)}`} className={`${styles.btn} ${styles.ghost}`}>
+            Open the full read
+          </Link>
+        </div>
+      )}
     </div>
   );
 }
