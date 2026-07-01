@@ -241,6 +241,21 @@ or every route 404s (dev server chokes on a production `.next`).
 - `types.ts` — shared types (`Read`, `Intake`, `Transcript`, `ReplyDraft`, …)
 - `scripts/migrate-double-encoded.mjs` — one-time jsonb normalization (FLAG-15);
   `scripts/check-continuation.mts` — FLAG-46 gate-1 detection harness
+- **Entry-screen line (FLAG-56 → 60):**
+  - `lib/recurrence.ts` — the recurrence gate (evidence-based, ref-deduped, axis-agnostic).
+  - `lib/analyze.ts` + `lib/prompt.ts` — the analyze call; tagging (over-segmented,
+    canonical, verbatim-anchored `axisInstances`) is **folded into this one call**, not a
+    separate pass; `max_tokens` has headroom so instances can't truncate receipts.
+  - `lib/patternLine.ts` — deterministic pattern engine: **one trajectory
+    (stuck/warming/cooling) + optional one flavour → one composed sentence, never two
+    badges.** Escalation reuses `boundary_response` and can raise the FLAG-59 safety flag
+    over time.
+  - `lib/cardModel.ts` / `lib/axisCopy.ts` — returning-card view model + row copy (incl.
+    mixed-state wording; `topRows()` caps at 3, ranks boundary/off-tone above neutral).
+  - `app/api/persons/[id]/summary` → `{ instances, laterTimepoint, patternLine,
+    patternSafety }` — aggregates stored instances + composes the line, deterministically.
+  - `app/entry/` — the returning screen (base cards from `/api/persons` + progressive
+    `/summary` fill + optimistic delete). **Temporary mount at `/entry`; moves under `/` in FLAG-58.**
 
 Model output is always run through a shape-guard so a missing/stray field
 can't crash the UI. Add new fields there, not just in the prompt.
@@ -588,6 +603,36 @@ user whose only screenshot is imperfect.**
   token is gone. The recovery endpoint must stay **enumeration-neutral**: identical
   response whether or not the email exists; a code is sent only to a registered
   email; all failures swallow into the neutral response.
+- **Read behaviour, not feelings** (also §AI/§2.10). Never invent messages or motives;
+  use only what the user shared. **No invented "interest %"/score.** Balanced — name
+  what's working as readily as what isn't; when behaviour is healthy, say so.
+- **No PII in localStorage.** Conversations are **IndexedDB-only** (§2.1); the server
+  holds **derived reads**, not conversation content or real names; persons are
+  nickname-only. The returning screen must **never** persist roster/read data to
+  localStorage.
+- **Safety flag fires on boundary-override / coercion** (FLAG-59). `safety.flag: true`
+  when a stated limit is overridden, a refusal is reframed as consent, or there's
+  physical pursuit after a "no." On a flagged read the **supportive note leads, the full
+  behavioural read still follows** (bars/receipts intact); reply-help stays available but
+  **biased toward firm/boundary-holding** drafts. Calibrated **not to over-fire** (healthy
+  / mildly-messy → no flag). Don't weaken this without re-running the FLAG-59 acceptance
+  transcripts.
+- **The canonical axis enum is CLOSED:** `effort_balance | plan_clarity |
+  reply_consistency | boundary_response`. Off-enum axes are dropped at **two runtime
+  gates** (the `lib/analyze.ts` Set + the `/api/persons/[id]/summary` route Set). **Adding
+  an axis = update `types.ts` + BOTH runtime Sets + `lib/prompt.ts` vocabulary +
+  `lib/axisCopy.ts` copy** — not just the type.
+- **Instance refs are stable verbatim hashes.** `ref` = FNV-1a hash of the snapped
+  verbatim exchange through the single audited `normalizeForRef`; **dedup is global across
+  a person's reports** (same real message → same ref → counts once). Never change
+  ref/normalization/hashing casually — it's what keeps the recurrence gate from inventing
+  false patterns.
+- **Zero model calls on returning-screen load.** The pattern line + summary are
+  **deterministic compute** in `/api/persons/[id]/summary`. **Never fetch `/pattern` (or
+  any model call) per-person on screen load.**
+- **Recurrence gate is axis-agnostic.** `lib/recurrence.ts` (`deriveAxisVerdicts`,
+  `distinctMoments`, `RECURRENCE_MIN = 2`) groups by `inst.axis` and must treat any
+  canonical axis identically. `LATER_TIMEPOINT_MIN_INTERVAL = 4d` gates over-time claims.
 
 ## Durable findings (don't re-litigate)
 
@@ -610,6 +655,27 @@ user whose only screenshot is imperfect.**
   screenshots (extraction), real exports (WhatsApp parse / input cap), real re-export
   pairs + a negative (FLAG-46 detection). Synthetic passes are fake greens; this
   discipline has caught every prod bug. `MOCK_LLM=1` is for plumbing/flow only.
+
+## Current state (VOLATILE — update as tickets close)
+
+> This section rots as tickets close; the Invariants and Durable findings above do **not**.
+> When they seem to disagree, trust the durable sections. (The FLAG-1 → FLAG-48 "what
+> exists today" list under Project overview is older detail; this is the recent summary.)
+
+- **Done:** FLAG-56 (recurrence gate + 4-axis tagging + `/summary` + returning card),
+  FLAG-57 (pattern-line trajectory spine — trajectory/escalation/one-sided, computed in
+  `/summary`, **not** persisted), FLAG-59 (safety flag on boundary-override).
+- **DB wiped → forward-only.** Every person has ≤1 report; the pattern line is **dormant
+  until real second-reads with a genuine gap accumulate** (expected, not a bug). Behaviour
+  rows are forward-only (only reads tagged after FLAG-56).
+- **Queued:** FLAG-58 (`/` router + landing removal — server-resolved new-vs-returning off
+  `/api/me` + `/api/persons`; **deletes the current live landing**; retires the temp
+  `/entry` mount; ports the new-visitor intro cinematic). FLAG-60 (cadence flavours —
+  ghosting/slow-fade/breadcrumbing/hot-cold + dots — **gated on a privacy-stance decision**:
+  client-side IndexedDB pass (device-dependent) vs. persisting timestamp-only metadata
+  server-side).
+- **Cross-person "same dynamic"** — future ticket, separate data scope (roster), paid-tier.
+- **Watch:** after FLAG-59, eyeball the prod safety-flag rate for over-firing on real reads.
 
 ## Git / PR / Jira workflow
 
