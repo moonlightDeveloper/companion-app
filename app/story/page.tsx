@@ -25,7 +25,7 @@ import { saveConversation, evictExpired, getConversation, getRecentConversations
 import { detectContinuation } from "@/lib/continuation";
 import { MAX_IMAGES } from "@/lib/cap";
 import { parseWhatsAppExport, whatsappTimestamps, type ParsedChat } from "@/lib/whatsapp";
-import { computeTimingFeatures, timingFromText, timelineFromLabels } from "@/lib/timing";
+import { computeTimingFeatures, timingFromText, timingFromMessageTimes } from "@/lib/timing";
 import { toScript, type FriendItem } from "@/lib/friendScript";
 import { windowForApi } from "@/lib/window";
 import { decodeStoryHandoff, HANDOFF_PARAM } from "@/lib/introHandoff";
@@ -301,7 +301,7 @@ export default function Story() {
           // FLAG-60: content-free cadence timing from the screenshot's captured per-message
           // times (converted to relative gaps on-device; the times themselves are dropped).
           // null when no timestamps were visible → cadence doesn't fire.
-          timingRef.current = computeTimingFeatures(timelineFromLabels(msgs.map((m) => m.time)));
+          timingRef.current = timingFromMessageTimes(msgs.map((m) => m.time));
           if (data.needsCheck) {
             // Verification waits until the transcript is consumed (clarify).
             setReviewMessages(msgs);

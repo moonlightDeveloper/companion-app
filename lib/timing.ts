@@ -101,10 +101,52 @@ export function timelineFromLabels(labels: (string | null | undefined)[]): numbe
   return out;
 }
 
-/** Timing from a pasted/typed conversation: parse each LINE's clock label → relative
- *  timeline → features. Null when no times are present (→ cadence doesn't fire). */
+/** FLAG-62 conservative-null coverage floor: below this fraction of messages carrying a
+ *  usable time, emit NO timing. A gap spanning many untimed messages isn't a real reply
+ *  gap — and a MISSING cadence is always safer than a FABRICATED one. */
+export const MIN_TIMED_COVERAGE = 0.6;
+
+/** Count inferred overnight rollovers (a backward time jump with NO day marker) vs the
+ *  timed-message count — a proxy for "how scrambled is this?". Legit multi-day threads roll
+ *  over rarely; a heavily out-of-order sequence rolls over constantly. */
+function scrambleSignal(labels: (string | null | undefined)[]): { rollovers: number; timed: number } {
+  let prev = -1;
+  let rollovers = 0;
+  let timed = 0;
+  for (const l of labels) {
+    if (!l) continue;
+    const m = timeOfDayMinutes(l);
+    if (m === null) continue;
+    if (prev >= 0 && m < prev && !DAY_MARKER.test(l)) rollovers++;
+    prev = m;
+    timed++;
+  }
+  return { rollovers, timed };
+}
+
+function gatedTiming(labels: (string | null | undefined)[], total: number): TimingFeatures | null {
+  const timeline = timelineFromLabels(labels);
+  if (timeline.length < MIN_MSGS_FOR_TIMING) return null; // too few timed messages
+  if (total > 0 && timeline.length / total < MIN_TIMED_COVERAGE) return null; // too sparse to trust
+  // Heavily out-of-order times (≥ half the steps jump backward) are unreliable to
+  // reconstruct — better no timing than fabricated day boundaries (FLAG-62).
+  const { rollovers, timed } = scrambleSignal(labels);
+  if (timed > 0 && rollovers * 2 >= timed) return null;
+  return computeTimingFeatures(timeline);
+}
+
+/** Timing from a pasted/typed conversation — parse each message line's clock label. Gated
+ *  (FLAG-62): too few timed lines, or coverage below MIN_TIMED_COVERAGE → null. */
 export function timingFromText(text: string): TimingFeatures | null {
-  return computeTimingFeatures(timelineFromLabels(text.split("\n")));
+  const lines = text.split("\n").filter((l) => l.trim().length > 0);
+  return gatedTiming(lines, lines.length);
+}
+
+/** Timing from screenshot-extracted per-message times (undefined = no visible time on that
+ *  message). Same conservative coverage gate — a mostly-untimed screenshot → null, not a
+ *  phantom gap (FLAG-62). */
+export function timingFromMessageTimes(times: (string | undefined)[]): TimingFeatures | null {
+  return gatedTiming(times, times.length);
 }
 
 export type CadenceFlavour = "ghosting" | "slow_fade" | "breadcrumbing" | "hot_cold" | null;
