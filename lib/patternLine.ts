@@ -128,15 +128,17 @@ function compose(t: Trajectory, f: PatternFlavour, span: number, nickname: strin
     return `This is escalating — ${nickname} keeps pushing further past your limits, read after read. That's worth taking seriously, not explaining away.`;
   }
   const weeks = Math.max(2, Math.round(span / WEEK));
-  // FLAG-60: a cadence flavour composes onto the trajectory as ONE calm sentence
-  // (ghosting stays non-dramatic). Never two badges.
+  // FLAG-60: a cadence flavour composes onto the trajectory as ONE calm sentence.
+  // FLAG-62: OBSERVATIONAL voice until timing accuracy is gate-1 validated — "looks like",
+  // "worth noticing", never a flat assertion ("they're ghosting you"). A mis-parsed gap
+  // must read as a soft observation, not a stated fact. (Safety voice is a separate path.)
   if (f === "ghosting" || f === "slow_fade" || f === "breadcrumbing" || f === "hot_cold") {
     const lead =
       t === "warming" ? "It's warming" : t === "cooling" ? "It's cooling" : `${weeks} weeks in, same read`;
-    if (f === "ghosting") return `${lead} — and lately they've gone quiet.`;
-    if (f === "slow_fade") return `${lead} — the replies keep stretching out.`;
-    if (f === "breadcrumbing") return `${lead} — a little contact, then quiet again, on repeat.`;
-    return `${lead} — warm, then distant, then warm.`; // hot_cold
+    if (f === "ghosting") return `${lead} — lately it looks like it's gone quiet, worth noticing.`;
+    if (f === "slow_fade") return `${lead} — the replies look like they're stretching out.`;
+    if (f === "breadcrumbing") return `${lead} — looks like a little contact, then quiet again.`;
+    return `${lead} — it looks like it keeps cycling, warm then distant.`; // hot_cold
   }
   if (t === "warming") {
     return f === "one_sided"

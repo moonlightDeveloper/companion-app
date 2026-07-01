@@ -78,10 +78,17 @@ export function whatsappTimestamps(raw: string): number[] {
     rows.map((r) =>
       Date.UTC(r.y, (dayFirst ? r.b : r.a) - 1, dayFirst ? r.a : r.b, r.hh, r.mm, r.ss),
     );
+  // Disambiguate day/month order: FIRST by month-validity (a US MM/DD export with a day
+  // > 12 makes the day-first reading's "month" invalid — decisive), THEN by monotonicity
+  // (chronological export), else default day-first. dayFirst uses r.b as the month;
+  // month-first uses r.a.
+  const invalid = (month: (r: (typeof rows)[number]) => number) =>
+    rows.filter((r) => month(r) < 1 || month(r) > 12).length;
+  const badDayFirst = invalid((r) => r.b);
+  const badMonthFirst = invalid((r) => r.a);
+  if (badDayFirst !== badMonthFirst) return build(badDayFirst < badMonthFirst);
   const violations = (xs: number[]) => xs.reduce((n, v, i) => n + (i > 0 && v < xs[i - 1] ? 1 : 0), 0);
-  const dayFirst = build(true);
-  const monthFirst = build(false);
-  return violations(dayFirst) <= violations(monthFirst) ? dayFirst : monthFirst;
+  return violations(build(true)) <= violations(build(false)) ? build(true) : build(false);
 }
 
 /** Split a header remainder into sender + text, or null for a system notice. */
