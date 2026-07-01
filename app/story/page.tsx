@@ -2580,14 +2580,16 @@ function ReportScreen({
           {canReply && conversation && conversation.trim() && (
             <>
               {/* "Where it stands now" — SAME design as the live page (chat bubbles +
-                  reply-line + Help-me-reply button). The button opens the recall reply
-                  path (ReplyHelper inline) instead of the live go("reply"). */}
+                  reply-line + Help-me-reply button). Tapping the button opens the recall
+                  reply flow (ReplyHelper) inline and hides the CTA — the chat bubbles
+                  stay as context — so there's ONE section, never a dead button stacked
+                  above a second reply UI. */}
               <div className={styles.friendRoot}>
                 <WhereItStands
                   conversation={conversation}
                   nickname={nickname}
                   flagged={isFlagged(read)}
-                  onReply={() => setShowReply(true)}
+                  onReply={showReply ? null : () => setShowReply(true)}
                 />
               </div>
               {showReply && <ReplyHelper name={nickname} conversation={conversation} />}
