@@ -52,12 +52,41 @@ export interface Read {
    *  the same snapshot. Frozen as-shown (incl. the "when" labels). Not model-emitted —
    *  attached at save time. */
   movement?: MovementNode[];
+  /** FLAG-56: instance-level evidence tags for the recurrence gate — each a distinct
+   *  supporting exchange, canonical-axis + lean, anchored to a verbatim content-hash
+   *  ref (see lib/recurrence.ts). Emitted additively by the analyze pass, verbatim-
+   *  validated at generation, persisted with the report. Aggregated across the person's
+   *  reports by /api/persons/[id]/summary. Forward-only; absent on pre-FLAG-56 reports. */
+  axisInstances?: AxisInstance[];
   /** FLAG-54: the "Key moments · receipts" — 2-3 telling exchanges shown as chat
    *  bubbles. Model-SELECTED but every message is VALIDATED verbatim against the real
    *  conversation at generation (non-matches dropped, empty moments dropped) and the
    *  bubbles snapped to the full real message + real side. Persisted with the report
    *  (like delta/movement) so recall shows the same receipts. */
   receipts?: ReadMoment[];
+}
+
+/** FLAG-56: the CLOSED canonical behavior-axis vocabulary. Server-pinned so the model
+ *  can't invent axis names and rebuild the comparability mush; anything off-enum is
+ *  never emitted (and the route drops it defensively). Extend deliberately, keep small. */
+export type CanonicalAxis =
+  | "effort_balance"
+  | "plan_clarity"
+  | "reply_consistency"
+  | "boundary_response";
+
+/** Which way one instance leans. "uncertain" = the behavior recurs but its DIRECTION is
+ *  ambiguous — it still counts toward recurrence and feeds the honest "mixed" read. */
+export type AxisLean = "healthy" | "leaning" | "off" | "uncertain";
+
+/** One tagged supporting exchange for an axis — a distinct moment, NOT a report (a
+ *  single report can carry several). `ref` is a verbatim content hash of the anchoring
+ *  exchange (lib/recurrence.ts axisRef); it's how distinct moments are counted and
+ *  deduped GLOBALLY across the person's reports. */
+export interface AxisInstance {
+  axis: CanonicalAxis;
+  lean: AxisLean;
+  ref: string;
 }
 
 /** FLAG-54: one receipt bubble — an EXACT real message + which side said it. */

@@ -1,0 +1,239 @@
+/* Returning-screen saved-read card — ported from companion-return.html. Entry-screen
+   palette tokens are scoped to the card root so they don't leak into the app theme. */
+.card {
+  --paper-2: #fcf8f1;
+  --ink: #26201c;
+  --ink-soft: #6b615a;
+  --clay: #bc5b45;
+  --clay-tint: #f0ddd4;
+  --line: #e7dccf;
+  --green: #7e9b6a;
+  --amber: #c9924f;
+  --serif: "Fraunces", Georgia, serif;
+  --sans: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  position: relative;
+  margin-top: 24px;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 20px;
+  box-shadow: 0 18px 40px -30px rgba(38, 32, 28, 0.5);
+  font-family: var(--sans);
+  color: var(--ink);
+}
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.mono {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: var(--clay-tint);
+  color: var(--clay);
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.who {
+  flex: 1;
+  min-width: 0;
+}
+.name {
+  font-weight: 600;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+.meta {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin-top: 1px;
+}
+.since {
+  font-size: 11.5px;
+  color: var(--clay);
+  background: var(--clay-tint);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.reads {
+  margin: 16px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.read {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 14px;
+}
+.dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+}
+.k {
+  color: var(--ink-soft);
+}
+.v {
+  color: var(--ink);
+  font-weight: 500;
+  margin-left: auto;
+}
+.dotG {
+  background: var(--green);
+}
+.dotA {
+  background: var(--amber);
+}
+.dotR {
+  background: var(--clay);
+}
+
+.pattern {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.weeks {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+.weeks i {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  opacity: 0.9;
+}
+.say {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 14.5px;
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
+.cardActions {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.btn {
+  width: 100%;
+  border: none;
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 16px;
+  border-radius: 15px;
+  padding: 15px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  text-decoration: none;
+  transition: transform 0.18s cubic-bezier(0.2, 0.7, 0.3, 1), box-shadow 0.2s, background 0.2s, border-color 0.2s;
+}
+.arrow {
+  transition: transform 0.2s;
+}
+.btn:hover .arrow {
+  transform: translateX(4px);
+}
+.primary {
+  background: var(--ink);
+  color: #fff;
+  box-shadow: 0 12px 30px -18px rgba(38, 32, 28, 0.75);
+}
+.primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 36px -18px rgba(38, 32, 28, 0.8);
+}
+.ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+.ghost:hover {
+  border-color: var(--clay);
+  background: #fff;
+}
+.trash {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin-left: 2px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, color 0.2s;
+}
+.trash:hover {
+  background: var(--clay-tint);
+  color: var(--clay);
+}
+.trash:focus-visible {
+  outline: 2px solid var(--clay);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  .arrow,
+  .trash {
+    transition: none;
+  }
+}
+
+/* inline delete confirm (ported from companion-return.html) */
+.confirm {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.ctext {
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+.ctext b {
+  font-weight: 600;
+}
+.cbtns {
+  margin-top: 14px;
+  display: flex;
+  gap: 10px;
+}
+.cbtns .btn {
+  flex: 1;
+  width: auto;
+}
+.danger {
+  background: var(--clay);
+  color: #fff;
+}
+.danger:hover {
+  background: #a94d39;
+  transform: translateY(-1px);
+}
