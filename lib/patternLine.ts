@@ -1,5 +1,6 @@
 import type { AxisInstance, AxisLean, CanonicalAxis, TimingFeatures } from "@/types";
 import { LATER_TIMEPOINT_MIN_INTERVAL } from "./recurrence";
+import type { CardTone } from "./cardModel";
 import { deriveCadence, type CadenceFlavour } from "./timing";
 
 /**
@@ -36,6 +37,25 @@ export interface PatternResult {
   flavour: PatternFlavour;
   /** Escalation → raise the safety concern over time (FLAG-59 tie-in). */
   safetyRaise: boolean;
+  /** FLAG-68: verdict tone for the pattern ring's colour (good/caution/low = the same
+   *  scale the bars use) — derived from the trajectory + flavour, never hardcoded per name. */
+  tone: CardTone;
+}
+
+/** Map the pattern's trajectory + flavour to the good/caution/low tone the bars use.
+ *  Concerning (cooling / one-sided / ghosting / slow-fade) → clay; mixed (stuck / hot-cold /
+ *  breadcrumbing) → amber; improving (warming) → green. */
+function patternTone(trajectory: Trajectory, flavour: PatternFlavour): CardTone {
+  if (
+    trajectory === "cooling" ||
+    flavour === "one_sided" ||
+    flavour === "ghosting" ||
+    flavour === "slow_fade"
+  ) {
+    return "clay";
+  }
+  if (trajectory === "warming") return "green";
+  return "amber"; // stuck / hot-cold / breadcrumbing
 }
 
 /** The minimal per-report input — what /summary already has on each stored report. */
@@ -62,7 +82,7 @@ function axisScores(instances: AxisInstance[]): Map<CanonicalAxis, number> {
   return out;
 }
 
-const NONE: PatternResult = { line: null, trajectory: null, flavour: null, safetyRaise: false };
+const NONE: PatternResult = { line: null, trajectory: null, flavour: null, safetyRaise: false, tone: "amber" };
 
 /**
  * Compute the pattern line. `reports` are the person's reports (any order). Returns
@@ -115,6 +135,7 @@ export function computePatternLine(reports: ReportLite[], nickname: string): Pat
     trajectory,
     flavour,
     safetyRaise,
+    tone: patternTone(trajectory, flavour),
   };
 }
 

@@ -121,24 +121,96 @@
   background: var(--clay);
 }
 
-.pattern {
+/* FLAG-68: the pattern element — ONE pulse ring (recoloured by verdict tone) beside the
+   composed line, with a recessive accuracy note beneath. Flat: bordered ring + expanding
+   bordered ping, no gradient/shadow/blur. */
+.patternBlock {
   margin-top: 14px;
   padding-top: 14px;
   border-top: 1px solid var(--line);
+}
+.patternMain {
   display: flex;
   align-items: center;
   gap: 12px;
 }
-.weeks {
-  display: flex;
-  gap: 6px;
+.ring {
   flex: none;
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
 }
-.weeks i {
-  width: 9px;
-  height: 9px;
-  border-radius: 999px;
-  opacity: 0.9;
+.ringCore {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+}
+.ringPing {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  opacity: 0;
+  animation: pingRing 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+@keyframes pingRing {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+/* Tone = the good/caution/low scale the bars use (color drives the ring border). */
+.ringGood {
+  color: var(--green);
+}
+.ringNeutral {
+  color: var(--amber);
+}
+.ringConcern {
+  color: var(--clay);
+}
+/* Data-completeness note — quiet, recessive; hairline above; only with the ring. */
+.accuracy {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  line-height: 1.4;
+  color: #9a8f84; /* recessive note grey (design spec) */
+}
+.accuracy svg {
+  flex: none;
+  margin-top: 2px;
+}
+/* Safety carve-out: escalation/safety is a calm supportive lane + marker — NOT the ring. */
+.patternSafe {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.safeMark {
+  flex: none;
+  color: var(--clay);
+  margin-top: 1px;
+}
+.patternSafe .say {
+  color: var(--clay);
+  font-style: normal;
+  font-weight: 500;
 }
 .say {
   font-family: var(--serif);
@@ -224,6 +296,12 @@
   .trash {
     transition: none;
   }
+  /* FLAG-68: static ring — no ping. The outer ring sits still; colour + note still show. */
+  .ringPing {
+    animation: none;
+    opacity: 0.5;
+    transform: scale(1.5);
+  }
 }
 
 /* Delete-confirm as a centered overlay over the dimmed body — veil edge-to-edge
@@ -277,9 +355,3 @@
   background: #a94d39;
 }
 
-/* FLAG-57: escalation pattern line — calm/supportive, not the casual italic voice. */
-.patternSafety .say {
-  color: var(--clay);
-  font-style: normal;
-  font-weight: 500;
-}

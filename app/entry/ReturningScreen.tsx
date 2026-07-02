@@ -57,6 +57,10 @@ export function ReturningScreen() {
           // FLAG-57: pattern line (deterministic, from /summary — zero model calls).
           const patternLine = typeof summary.patternLine === "string" ? summary.patternLine : undefined;
           const patternSafety = summary.patternSafety === true;
+          // FLAG-68: verdict tone for the pattern ring colour.
+          const patternTone = (["green", "amber", "clay"] as const).includes(summary.patternTone)
+            ? (summary.patternTone as CardModel["patternTone"])
+            : undefined;
           // FLAG-58: newest report id for "Open the full read" (read-only view).
           const latestReportId =
             typeof summary.latestReportId === "string" ? summary.latestReportId : undefined;
@@ -64,7 +68,7 @@ export function ReturningScreen() {
             cur
               ? cur.map((c) =>
                   c.id === p.id
-                    ? { ...c, ...(behavior.length ? { behavior } : {}), patternLine, patternSafety, latestReportId }
+                    ? { ...c, ...(behavior.length ? { behavior } : {}), patternLine, patternSafety, patternTone, latestReportId }
                     : c,
                 )
               : cur,

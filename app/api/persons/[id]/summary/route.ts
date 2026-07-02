@@ -62,6 +62,8 @@ export async function GET(
       laterTimepoint,
       patternLine: pattern.line,
       patternSafety: pattern.safetyRaise,
+      // FLAG-68: verdict tone for the pattern ring's colour (good/caution/low).
+      patternTone: pattern.tone,
       // FLAG-58: the newest report's id (reports are DESC) → the card's "Open the full
       // read" deep-links to the read-only saved-report view for it.
       latestReportId: reports[0]?.id ?? null,
@@ -78,5 +80,6 @@ const EMPTY = {
   laterTimepoint: false,
   patternLine: null,
   patternSafety: false,
+  patternTone: "amber",
   latestReportId: null,
 };

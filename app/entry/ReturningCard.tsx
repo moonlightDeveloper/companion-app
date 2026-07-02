@@ -12,6 +12,13 @@ const dotClass: Record<CardTone, string> = {
   clay: styles.dotR,
 };
 
+// FLAG-68: the pulse ring is ONE shape, recoloured by the verdict tone (good/caution/low).
+const ringTone: Record<CardTone, string> = {
+  green: styles.ringGood,
+  amber: styles.ringNeutral,
+  clay: styles.ringConcern,
+};
+
 /**
  * The returning-screen saved-read card (ported from companion-return.html), fed by a
  * real roster Person via toCardModel. Report-derived sections (behavior rows, pattern)
@@ -72,22 +79,51 @@ export function ReturningCard({
             </div>
           )}
 
-          {/* FLAG-57: the retention hook — the composed pattern line, shown ONLY when the
-              evidence bar is met. FLAG-67: the free teaser no longer lives per-card (it's a
-              single intro line at the top of the returning screen). Escalation renders in
-              the calm/supportive voice. Dots dropped until a weekly-cadence source exists. */}
-          {model.patternLine && (
-            <div className={`${styles.pattern} ${model.patternSafety ? styles.patternSafety : ""}`}>
-              {model.patternDots && model.patternDots.length > 0 && (
-                <div className={styles.weeks} aria-label="pattern by week">
-                  {model.patternDots.map((t, i) => (
-                    <i key={i} className={dotClass[t]} />
-                  ))}
+          {/* FLAG-57/68: the retention hook — shown ONLY when the evidence bar is met
+              (patternLine present = ≥2 reads over a real gap; never a single read). FLAG-67:
+              the below-the-bar teaser lives once at the top of the screen, not per-card. */}
+          {model.patternLine &&
+            (model.patternSafety ? (
+              // FLAG-68 safety carve-out: escalation / safety → the CALM treatment (a muted
+              // supportive lane + marker), NOT the playful pulse ring.
+              <div className={styles.patternSafe}>
+                <svg
+                  className={styles.safeMark}
+                  viewBox="0 0 24 24"
+                  width="20"
+                  height="20"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>
+                <p className={styles.say}>{model.patternLine}</p>
+              </div>
+            ) : (
+              // FLAG-68: one pulse ring, recoloured by verdict tone; the composed line
+              // beside it; the accuracy note beneath (multi-read patterns only).
+              <div className={styles.patternBlock}>
+                <div className={styles.patternMain}>
+                  <span className={`${styles.ring} ${ringTone[model.patternTone ?? "amber"]}`} aria-hidden="true">
+                    <span className={styles.ringCore} />
+                    <span className={styles.ringPing} />
+                  </span>
+                  <p className={styles.say}>{model.patternLine}</p>
                 </div>
-              )}
-              <div className={styles.say}>{model.patternLine}</div>
-            </div>
-          )}
+                <p className={styles.accuracy}>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 16v-4M12 8h.01" />
+                  </svg>
+                  I can only see what you&rsquo;ve brought me &mdash; if there&rsquo;s more between these,
+                  this might read a little differently.
+                </p>
+              </div>
+            ))}
 
           <div className={styles.cardActions}>
             <Link href={`/story?person=${encodeURIComponent(model.id)}`} className={`${styles.btn} ${styles.primary}`}>
