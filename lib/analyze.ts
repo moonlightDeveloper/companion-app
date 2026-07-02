@@ -13,6 +13,7 @@ import type {
   ReadCard,
   ReadMoment,
   ReadReceiptMsg,
+  SafetyLevel,
   TimingFeatures,
 } from "@/types";
 import { SYSTEM_PROMPT, buildUserMessage, type Clarification } from "@/lib/prompt";
@@ -245,6 +246,13 @@ function shapeGuard(raw: unknown): Read {
 
   const safetyRaw = isRecord(obj.safety) ? obj.safety : {};
   const safetyFlag = safetyRaw.flag === true;
+  // FLAG-69: fail SAFE. A flagged read whose `level` is missing/invalid defaults to
+  // "serious" — never soften a concern the model already raised because a field dropped.
+  const safetyLevel: SafetyLevel | null = safetyFlag
+    ? safetyRaw.level === "notice" || safetyRaw.level === "caution" || safetyRaw.level === "serious"
+      ? safetyRaw.level
+      : "serious"
+    : null;
 
   const bars = Array.isArray(obj.bars)
     ? obj.bars.map(guardBar).slice(0, 4)
@@ -289,6 +297,7 @@ function shapeGuard(raw: unknown): Read {
     where_this_leaves_you: asString(obj.where_this_leaves_you, ""),
     safety: {
       flag: safetyFlag,
+      level: safetyLevel,
       note: typeof safetyRaw.note === "string" ? safetyRaw.note : null,
     },
     ...(delta.length > 0 ? { delta } : {}),

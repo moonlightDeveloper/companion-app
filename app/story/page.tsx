@@ -20,7 +20,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { Intake, Read, ReplyDraft, TranscriptMessage, DeltaChange, MovementNode, ReadMoment, TimingFeatures } from "@/types";
+import type { Intake, Read, ReplyDraft, TranscriptMessage, DeltaChange, MovementNode, ReadMoment, TimingFeatures, SafetyLevel } from "@/types";
 import { saveConversation, evictExpired, getConversation, getRecentConversations, deletePersonConversations, pruneOrphanConversations } from "@/lib/localConversations";
 import { detectContinuation } from "@/lib/continuation";
 import { MAX_IMAGES } from "@/lib/cap";
@@ -2599,13 +2599,23 @@ function HistoryScreen({
 const DEFAULT_SAFETY_NOTE =
   "Some of what you shared reads as pressure past a clear no. Trust that instinct — you don’t have to keep engaging. Reach out to people you trust, or your local support services. You don’t have to handle this alone.";
 
-/** FLAG-59: the safety note LEADS the read when safety.flag is set (boundary-override /
- *  coercion). It names the concern plainly and coexists with the full behaviour read
- *  below — it never replaces or minimizes it. */
-function SafetyBanner({ note }: { note: string | null }) {
+/** FLAG-59/69: the safety note LEADS the read when safety.flag is set (boundary-override /
+ *  coercion). It names the concern plainly and coexists with the full behaviour read below —
+ *  never replaces/minimizes it. FLAG-69: coloured + labelled by SEVERITY (never green — green
+ *  over a warning was the bug). A flagged banner with a missing level reads as "serious"
+ *  (fail-safe). Uses its OWN tone classes, NOT the shared green .relax skin. */
+const SAFETY_LABEL: Record<SafetyLevel, string> = {
+  notice: "Worth noticing",
+  caution: "Worth being careful here",
+  serious: "This may not be safe",
+};
+function SafetyBanner({ level, note }: { level: SafetyLevel | null; note: string | null }) {
+  const lvl: SafetyLevel = level ?? "serious"; // fail-safe: flagged-but-no-level → serious
+  const toneClass =
+    lvl === "notice" ? styles.safetyNotice : lvl === "caution" ? styles.safetyCaution : styles.safetySerious;
   return (
-    <div className={`${styles.insight} ${styles.relax}`} style={{ marginBottom: 16 }}>
-      <div className={styles.k}>This may not be safe</div>
+    <div className={`${styles.insight} ${toneClass}`} style={{ marginBottom: 16 }}>
+      <div className={styles.k}>{SAFETY_LABEL[lvl]}</div>
       <p style={{ fontSize: 14 }}>{note || DEFAULT_SAFETY_NOTE}</p>
     </div>
   );
@@ -2647,7 +2657,7 @@ function ReportScreen({
       {/* FLAG-59: on a safety flag the supportive note LEADS, then the full read still
           follows (bars/receipts intact) — never replaced. Reply stays suppressed (the
           conversation isn't loaded on a flagged read — see the effect above). */}
-      {read.safety.flag && <SafetyBanner note={read.safety.note} />}
+      {read.safety.flag && <SafetyBanner level={read.safety.level} note={read.safety.note} />}
       {(
         <>
           <div className={styles.status}>
@@ -2827,7 +2837,7 @@ function ReadScreen({
       {/* FLAG-59: on a safety flag the supportive note LEADS, then the full behaviour
           read still follows below (never replaced/minimized). Reply is suppressed on a
           flagged read — you don't have to keep engaging. */}
-      {read.safety.flag && <SafetyBanner note={read.safety.note} />}
+      {read.safety.flag && <SafetyBanner level={read.safety.level} note={read.safety.note} />}
       {/* FLAG-48: the read is delivered as a friend talking it through. Pure
           presentation — the analysis/conclusions are unchanged (Option A maps the
           existing Read fields to typed/pop/reveal turns). FLAG-65: when the title-screen

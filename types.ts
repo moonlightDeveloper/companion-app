@@ -24,8 +24,14 @@ export interface ReadCard {
   body: string;
 }
 
+/** FLAG-69: how concerning a flagged safety signal is. null when flag=false. Escalate when
+ *  uncertain (prompt rule); a flagged read with a missing/invalid level fails safe to
+ *  "serious" (shape-guard) — never round a safety concern down. */
+export type SafetyLevel = "notice" | "caution" | "serious";
+
 export interface ReadSafety {
   flag: boolean;
+  level: SafetyLevel | null;
   note: string | null;
 }
 

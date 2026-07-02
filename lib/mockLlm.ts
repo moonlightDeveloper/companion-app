@@ -27,7 +27,7 @@ export const MOCK_READ: Read = {
   ],
   suggested_move: "(mock) Stub response — turn off MOCK_LLM for a real read.",
   where_this_leaves_you: "(mock) Flow/plumbing path verified without a real Claude call.",
-  safety: { flag: false, note: null },
+  safety: { flag: false, level: null, note: null },
 };
 
 export function mockTranscript(nickname: string): Transcript {
