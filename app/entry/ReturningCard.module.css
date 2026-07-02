@@ -25,6 +25,16 @@
   font-family: var(--sans);
   color: var(--ink);
 }
+/* FLAG-68: a concerning-tone pattern deepens the whole card surface (per the reference);
+   escalation/safety uses the calm muted card. Surface tints only — not verdict colours. */
+.cardConcern {
+  background: #f0e4d2;
+  border-color: #dec9a8;
+}
+.cardSafe {
+  background: #ebe7de;
+  border-color: #d8d2c6;
+}
 .cardHead {
   display: flex;
   align-items: center;
@@ -121,31 +131,105 @@
   background: var(--clay);
 }
 
-.pattern {
+/* FLAG-68: the pattern element — ONE pulse ring (recoloured by verdict tone) beside the
+   composed line, with a recessive accuracy note beneath. Flat: bordered ring + expanding
+   bordered ping, no gradient/shadow/blur. */
+.patternBlock {
   margin-top: 14px;
   padding-top: 14px;
   border-top: 1px solid var(--line);
+}
+.patternMain {
   display: flex;
   align-items: center;
   gap: 12px;
 }
-.weeks {
-  display: flex;
-  gap: 6px;
+.ring {
   flex: none;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.weeks i {
-  width: 9px;
-  height: 9px;
-  border-radius: 999px;
-  opacity: 0.9;
+.ringShape {
+  position: relative;
+  width: 19px;
+  height: 19px;
+}
+.ringCore,
+.ringP1,
+.ringP2 {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2.5px solid currentColor;
+}
+.ringP1,
+.ringP2 {
+  animation: ping 3s ease-out infinite;
+}
+.ringP2 {
+  animation-delay: 1.5s;
+}
+@keyframes ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.65;
+  }
+  70% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+/* Tone = the good/caution/low scale the bars use (color drives the ring border). */
+.ringGood {
+  color: var(--green);
+}
+.ringNeutral {
+  color: var(--amber);
+}
+.ringConcern {
+  color: var(--clay);
+}
+/* Data-completeness note — quiet, recessive; hairline above; only with the ring. */
+.accuracy {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  line-height: 1.5;
+  color: #9a8f84; /* recessive note grey (design spec) */
+}
+.accuracy svg {
+  flex: none;
+  margin-top: 2px;
+}
+/* Safety carve-out: escalation/safety is a calm supportive lane + marker — NOT the ring. */
+.patternSafe {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.safeMark {
+  flex: none;
+  color: var(--clay);
+  margin-top: 1px;
 }
 .say {
   font-family: var(--serif);
-  font-style: italic;
-  font-size: 14.5px;
-  line-height: 1.35;
-  color: var(--ink-soft);
+  font-size: 13.5px;
+  line-height: 1.38;
+  color: var(--ink);
 }
 
 .cardActions {
@@ -224,6 +308,12 @@
   .trash {
     transition: none;
   }
+  /* FLAG-68: static ring — no ping (matches the reference). Core + colour + note show. */
+  .ringP1,
+  .ringP2 {
+    animation: none;
+    opacity: 0;
+  }
 }
 
 /* Delete-confirm as a centered overlay over the dimmed body — veil edge-to-edge
@@ -277,9 +367,3 @@
   background: #a94d39;
 }
 
-/* FLAG-57: escalation pattern line — calm/supportive, not the casual italic voice. */
-.patternSafety .say {
-  color: var(--clay);
-  font-style: normal;
-  font-weight: 500;
-}
