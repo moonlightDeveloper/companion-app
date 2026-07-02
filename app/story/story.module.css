@@ -709,6 +709,31 @@
   color: var(--amber);
 }
 
+/* FLAG-69: SafetyBanner severity tones — SafetyBanner ONLY (never the shared green .relax).
+   Warm surfaces from amber → clay; NO green at any level. Label colour per the severity
+   spec: notice amber, caution deep-amber/muted-clay, serious clay. */
+.safetyNotice {
+  border-color: #e6d2b6;
+  background: #fff8ef;
+}
+.safetyNotice .k {
+  color: #c9924f;
+}
+.safetyCaution {
+  border-color: #e6ccb6;
+  background: #fdf2ec;
+}
+.safetyCaution .k {
+  color: #c2764a;
+}
+.safetySerious {
+  border-color: #e7c6bb;
+  background: #fbeeea;
+}
+.safetySerious .k {
+  color: #bc5b45;
+}
+
 .errorCard {
   background: #fff;
   border: 1px solid var(--line);
