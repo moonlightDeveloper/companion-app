@@ -2671,6 +2671,7 @@ function ReportScreen({
               <MovementSection
                 nodes={read.movement}
                 nickname={nickname}
+                tone={readTone(read)}
                 revealAll={false}
                 autoScroll={false}
               />
@@ -3089,6 +3090,7 @@ function FriendRead({
                 <MovementSection
                   nodes={movement}
                   nickname={nickname}
+                  tone={readTone(read)}
                   revealAll={revealAll}
                   autoScroll={true}
                 />
@@ -3314,6 +3316,15 @@ function buildMovement(current: Read, priors: ClientReport[]): MovementNode[] {
   }));
 }
 
+/** FLAG-70: the read's overall verdict tone for the pattern pulse ring — the same
+ *  good/caution/low signal the bars + safety use, worst-wins. Derived, not hardcoded. */
+function readTone(read: Read): "green" | "amber" | "clay" {
+  if (read.safety.flag) return "clay";
+  if (read.bars.some((b) => b.tone === "low")) return "clay";
+  if (read.bars.some((b) => b.tone === "caution")) return "amber";
+  return "green";
+}
+
 /**
  * Movement over time — ported from movement-3.html. A flowing timeline of up to the
  * 3 most recent reads of a person (oldest top → newest bottom): the spine draws
@@ -3326,15 +3337,20 @@ function buildMovement(current: Read, priors: ClientReport[]): MovementNode[] {
 function MovementSection({
   nodes,
   nickname,
+  tone,
   revealAll,
   autoScroll,
 }: {
   nodes: MovementNode[];
   nickname: string;
+  /** FLAG-70: verdict tone for the pattern pulse ring (from the read's bars/safety). */
+  tone: "green" | "amber" | "clay";
   revealAll: boolean;
   /** Live read → scroll the "now" read into view after the entrance; recall → false. */
   autoScroll: boolean;
 }) {
+  const ringTone =
+    tone === "green" ? styles.mvRingGood : tone === "amber" ? styles.mvRingNeutral : styles.mvRingConcern;
   const reduce =
     typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const instant = reduce || revealAll;
@@ -3374,7 +3390,15 @@ function MovementSection({
   return (
     <div className={`${styles.mvRoot} ${instant ? styles.mvInstant : ""}`}>
       <div className={styles.mvDeck}>
-        Across your last {n} reads of {nickname}
+        {/* FLAG-70: the pattern pulse ring — one shape, coloured by verdict tone. */}
+        <span className={`${styles.mvRing} ${ringTone}`} aria-hidden="true">
+          <span className={styles.mvRingCore} />
+          <span className={styles.mvRingP1} />
+          <span className={styles.mvRingP2} />
+        </span>
+        <span>
+          Across your last {n} reads of {nickname}
+        </span>
       </div>
       <div className={styles.mvFlowwrap}>
         <div className={styles.mvFlowline} />
