@@ -227,3 +227,14 @@
     transition: none !important;
   }
 }
+
+/* FLAG-67: the single top instance of the pattern teaser — one intro line above the card
+   list (was per-card). Matches the card pattern-line feel (Fraunces italic, muted). */
+.patternIntro {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+  margin: 12px 2px 2px;
+}

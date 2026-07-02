@@ -128,6 +128,10 @@ export function ReturningScreen() {
                 not just this moment, the pattern.
               </p>
             </div>
+            {/* FLAG-67: the teaser now lives ONCE here (above the card list), not per-card. */}
+            <p className={styles.patternIntro}>
+              Add what&rsquo;s new and I&rsquo;ll show you how it&rsquo;s really moving.
+            </p>
             {cards.map((c) => (
               <ReturningCard key={c.id} model={c} onDelete={() => handleDelete(c.id)} />
             ))}
