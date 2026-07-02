@@ -40,7 +40,7 @@ export function ReturningCard({
         )}
         {onDelete && !confirming && (
           <button className={styles.trash} aria-label={`Delete ${model.name}`} onClick={() => setConfirming(true)}>
-            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg viewBox="0 0 24 24" width="25" height="25" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 6h18" />
               <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
               <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
@@ -72,21 +72,22 @@ export function ReturningCard({
             </div>
           )}
 
-          {/* FLAG-57: the retention hook — the composed pattern line when the evidence bar
-              is met, else the free teaser (never a fabricated trend). Escalation renders in
+          {/* FLAG-57: the retention hook — the composed pattern line, shown ONLY when the
+              evidence bar is met. FLAG-67: the free teaser no longer lives per-card (it's a
+              single intro line at the top of the returning screen). Escalation renders in
               the calm/supportive voice. Dots dropped until a weekly-cadence source exists. */}
-          <div className={`${styles.pattern} ${model.patternSafety ? styles.patternSafety : ""}`}>
-            {model.patternDots && model.patternDots.length > 0 && (
-              <div className={styles.weeks} aria-label="pattern by week">
-                {model.patternDots.map((t, i) => (
-                  <i key={i} className={dotClass[t]} />
-                ))}
-              </div>
-            )}
-            <div className={styles.say}>
-              {model.patternLine || "Add what’s new and I’ll show you how it’s really moving."}
+          {model.patternLine && (
+            <div className={`${styles.pattern} ${model.patternSafety ? styles.patternSafety : ""}`}>
+              {model.patternDots && model.patternDots.length > 0 && (
+                <div className={styles.weeks} aria-label="pattern by week">
+                  {model.patternDots.map((t, i) => (
+                    <i key={i} className={dotClass[t]} />
+                  ))}
+                </div>
+              )}
+              <div className={styles.say}>{model.patternLine}</div>
             </div>
-          </div>
+          )}
 
           <div className={styles.cardActions}>
             <Link href={`/story?person=${encodeURIComponent(model.id)}`} className={`${styles.btn} ${styles.primary}`}>

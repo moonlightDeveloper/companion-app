@@ -177,9 +177,9 @@
   transform: translateX(4px);
 }
 .primary {
-  background: var(--ink);
-  color: #fff;
-  box-shadow: 0 12px 30px -18px rgba(38, 32, 28, 0.75);
+  background: #dba890;
+  color: #ffffff;
+  box-shadow: -5px 13px 22px -20px #26201cbf;
 }
 .primary:hover {
   transform: translateY(-2px);
@@ -202,7 +202,7 @@
   border-radius: 9px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--ink-soft);
+  color: var(--clay);
   cursor: pointer;
   display: flex;
   align-items: center;
