@@ -1336,6 +1336,63 @@
   margin-bottom: 16px;
   opacity: 0;
   animation: mvFade 0.6s ease 0.35s forwards;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+/* FLAG-70: the pattern pulse ring on the movement summary — ONE ring to the left of the
+   "Across your last N reads" line, coloured by the read's verdict tone (green/amber/clay),
+   matching pattern_ring_reference_again. Flat (bordered core + expanding bordered pings). */
+.mvRing {
+  flex: none;
+  position: relative;
+  width: 19px;
+  height: 19px;
+}
+.mvRingCore,
+.mvRingP1,
+.mvRingP2 {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2.5px solid currentColor;
+}
+.mvRingP1,
+.mvRingP2 {
+  animation: mvPing 3s ease-out infinite;
+}
+.mvRingP2 {
+  animation-delay: 1.5s;
+}
+@keyframes mvPing {
+  0% {
+    transform: scale(1);
+    opacity: 0.65;
+  }
+  70% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.mvRingGood {
+  color: #7e9b6a;
+}
+.mvRingNeutral {
+  color: #c9924f;
+}
+.mvRingConcern {
+  color: #bc5b45;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Static ring — no ping (the core stays visible), matching the reference's reduced-motion. */
+  .mvRingP1,
+  .mvRingP2 {
+    animation: none;
+    opacity: 0;
+  }
 }
 .mvFlowwrap {
   position: relative;
