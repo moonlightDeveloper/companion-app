@@ -25,6 +25,16 @@
   font-family: var(--sans);
   color: var(--ink);
 }
+/* FLAG-68: a concerning-tone pattern deepens the whole card surface (per the reference);
+   escalation/safety uses the calm muted card. Surface tints only — not verdict colours. */
+.cardConcern {
+  background: #f0e4d2;
+  border-color: #dec9a8;
+}
+.cardSafe {
+  background: #ebe7de;
+  border-color: #d8d2c6;
+}
 .cardHead {
   display: flex;
   align-items: center;
@@ -136,34 +146,42 @@
 }
 .ring {
   flex: none;
-  position: relative;
   width: 44px;
   height: 44px;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.ringCore {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 2px solid currentColor;
+.ringShape {
+  position: relative;
+  width: 19px;
+  height: 19px;
 }
-.ringPing {
+.ringCore,
+.ringP1,
+.ringP2 {
   position: absolute;
-  width: 16px;
-  height: 16px;
+  inset: 0;
   border-radius: 50%;
-  border: 2px solid currentColor;
-  opacity: 0;
-  animation: pingRing 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+  border: 2.5px solid currentColor;
 }
-@keyframes pingRing {
+.ringP1,
+.ringP2 {
+  animation: ping 3s ease-out infinite;
+}
+.ringP2 {
+  animation-delay: 1.5s;
+}
+@keyframes ping {
   0% {
-    transform: scale(0.7);
-    opacity: 0.85;
+    transform: scale(1);
+    opacity: 0.65;
+  }
+  70% {
+    transform: scale(2.1);
+    opacity: 0;
   }
   100% {
-    transform: scale(2.4);
     opacity: 0;
   }
 }
@@ -186,7 +204,7 @@
   padding-top: 12px;
   border-top: 1px solid var(--line);
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.5;
   color: #9a8f84; /* recessive note grey (design spec) */
 }
 .accuracy svg {
@@ -207,17 +225,11 @@
   color: var(--clay);
   margin-top: 1px;
 }
-.patternSafe .say {
-  color: var(--clay);
-  font-style: normal;
-  font-weight: 500;
-}
 .say {
   font-family: var(--serif);
-  font-style: italic;
-  font-size: 14.5px;
-  line-height: 1.35;
-  color: var(--ink-soft);
+  font-size: 13.5px;
+  line-height: 1.38;
+  color: var(--ink);
 }
 
 .cardActions {
@@ -296,11 +308,11 @@
   .trash {
     transition: none;
   }
-  /* FLAG-68: static ring — no ping. The outer ring sits still; colour + note still show. */
-  .ringPing {
+  /* FLAG-68: static ring — no ping (matches the reference). Core + colour + note show. */
+  .ringP1,
+  .ringP2 {
     animation: none;
-    opacity: 0.5;
-    transform: scale(1.5);
+    opacity: 0;
   }
 }
 

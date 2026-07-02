@@ -34,8 +34,17 @@ export function ReturningCard({
 }) {
   const meta = firstReadLabel(model.firstReadDaysAgo);
   const [confirming, setConfirming] = useState(false);
+  // FLAG-68 alignment: the card surface follows the pattern — escalation/safety → muted
+  // calm card; a concerning-tone ring → the deeper surface; otherwise the normal card.
+  const patternTint = model.patternLine
+    ? model.patternSafety
+      ? styles.cardSafe
+      : model.patternTone === "clay"
+        ? styles.cardConcern
+        : ""
+    : "";
   return (
-    <div className={styles.card}>
+    <div className={`${styles.card} ${patternTint}`}>
       <div className={styles.cardHead}>
         <div className={styles.mono}>{model.monogram}</div>
         <div className={styles.who}>
@@ -108,16 +117,20 @@ export function ReturningCard({
               // beside it; the accuracy note beneath (multi-read patterns only).
               <div className={styles.patternBlock}>
                 <div className={styles.patternMain}>
+                  {/* ONE pulse ring (19px), recoloured by tone: core + two staggered pings. */}
                   <span className={`${styles.ring} ${ringTone[model.patternTone ?? "amber"]}`} aria-hidden="true">
-                    <span className={styles.ringCore} />
-                    <span className={styles.ringPing} />
+                    <span className={styles.ringShape}>
+                      <span className={styles.ringP1} />
+                      <span className={styles.ringP2} />
+                      <span className={styles.ringCore} />
+                    </span>
                   </span>
                   <p className={styles.say}>{model.patternLine}</p>
                 </div>
                 <p className={styles.accuracy}>
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                     <circle cx="12" cy="12" r="9" />
-                    <path d="M12 16v-4M12 8h.01" />
+                    <path d="M12 8h.01M11 12h1v4h1" />
                   </svg>
                   I can only see what you&rsquo;ve brought me &mdash; if there&rsquo;s more between these,
                   this might read a little differently.
